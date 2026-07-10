@@ -33,6 +33,7 @@ class MultimodalIndex:
     backend_version: str
     dimension: int
     entries: list[MultimodalIndexEntry]
+    model_name: str | None = None
 
 
 def build_multimodal_index(
@@ -60,6 +61,7 @@ def build_multimodal_index(
         backend_version=f"{text_encoder.backend_version}+{image_encoder.backend_version}",
         dimension=text_encoder.dimension,
         entries=entries,
+        model_name=None,
     )
 
 
@@ -78,6 +80,7 @@ def load_multimodal_index(path: Path) -> MultimodalIndex:
         backend_version=data["backend_version"],
         dimension=data["dimension"],
         entries=[MultimodalIndexEntry(**entry) for entry in data["entries"]],
+        model_name=data.get("model_name"),
     )
 
 

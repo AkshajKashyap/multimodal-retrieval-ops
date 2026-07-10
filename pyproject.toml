@@ -10,6 +10,7 @@ multimodal-retrieval-ops = "multimodal_retrieval_ops.cli:main"
 
 [project.optional-dependencies]
 dev = ["pytest", "ruff"]
+clip = ["Pillow>=10", "torch>=2.2", "transformers>=4.40"]
 
 [tool.ruff]
 line-length = 100

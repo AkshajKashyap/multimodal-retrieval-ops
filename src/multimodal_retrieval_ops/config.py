@@ -22,6 +22,11 @@ class ProjectConfig:
     multimodal_index_path: Path = Path("artifacts/baseline/multimodal_index.json")
     multimodal_report_path: Path = Path("reports/multimodal_baseline_report.md")
     multimodal_metrics_path: Path = Path("reports/multimodal_baseline_metrics.json")
+    clip_index_path: Path = Path("artifacts/clip/clip_index.json")
+    clip_cache_path: Path = Path("artifacts/clip/embedding_cache.json")
+    clip_backend_report_path: Path = Path("reports/clip_backend_report.md")
+    clip_report_path: Path = Path("reports/clip_retrieval_report.md")
+    clip_metrics_path: Path = Path("reports/clip_retrieval_metrics.json")
 
 
 def load_config(path: Path | None = None) -> ProjectConfig:
@@ -65,4 +70,11 @@ def load_config(path: Path | None = None) -> ProjectConfig:
         multimodal_metrics_path=Path(
             project.get("multimodal_metrics_path", ProjectConfig.multimodal_metrics_path)
         ),
+        clip_index_path=Path(project.get("clip_index_path", ProjectConfig.clip_index_path)),
+        clip_cache_path=Path(project.get("clip_cache_path", ProjectConfig.clip_cache_path)),
+        clip_backend_report_path=Path(
+            project.get("clip_backend_report_path", ProjectConfig.clip_backend_report_path)
+        ),
+        clip_report_path=Path(project.get("clip_report_path", ProjectConfig.clip_report_path)),
+        clip_metrics_path=Path(project.get("clip_metrics_path", ProjectConfig.clip_metrics_path)),
     )

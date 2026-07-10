@@ -82,3 +82,34 @@ multimodal-retrieval-ops evaluate-multimodal-baseline
 The generated `artifacts/baseline/multimodal_index.json` stays ignored. Deterministic evaluation
 summaries are written to `reports/multimodal_baseline_report.md` and
 `reports/multimodal_baseline_metrics.json`.
+
+## Milestone 5: optional CLIP zero-shot backend
+
+The lightweight default installation remains unchanged and does not install neural dependencies:
+
+```bash
+python -m pip install -e ".[dev]"
+```
+
+To enable the Hugging Face CLIP backend, install the optional extra:
+
+```bash
+python -m pip install -e ".[dev,clip]"
+```
+
+CLIP imports and model loading are lazy. Local model weights are required by default, so ordinary
+tests and commands never download a model. Pass `--allow-download` to a CLIP model command only
+when network-backed Hugging Face loading is intentional.
+
+```bash
+multimodal-retrieval-ops clip-backend-info
+multimodal-retrieval-ops build-clip-index
+multimodal-retrieval-ops search-clip --query "red car"
+multimodal-retrieval-ops evaluate-clip
+```
+
+The default model is `openai/clip-vit-base-patch32`; override it with `--model-name`. CLIP commands
+also accept `--device` (default `cpu`) and `--batch-size`. Generated indexes and embedding caches
+remain ignored under `artifacts/clip/`. CLIP results depend on actual model weights, and retrieval
+over the tiny fixtures is an integration check—not a model-quality benchmark. No FAISS or
+fine-tuning is included yet.

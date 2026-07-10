@@ -7,6 +7,14 @@ from pathlib import Path
 
 from . import __version__
 from .baseline_index import build_index, exact_search, load_index, write_index
+from .clip_backend import (
+    DEFAULT_CLIP_MODEL,
+    ClipEmbeddingBackend,
+    clip_dependencies_available,
+    clip_dependency_message,
+)
+from .clip_reporting import write_clip_backend_report, write_clip_retrieval_reports
+from .clip_workflow import build_clip_index
 from .config import load_config
 from .demo import generate_demo_manifest
 from .deterministic_image_encoder import DeterministicImageEncoder
@@ -96,6 +104,36 @@ def build_parser() -> argparse.ArgumentParser:
     multimodal_evaluate.add_argument("--index", type=Path)
     multimodal_evaluate.add_argument("--report-output", type=Path)
     multimodal_evaluate.add_argument("--metrics-output", type=Path)
+    clip_info = subparsers.add_parser(
+        "clip-backend-info", help="show optional CLIP backend availability"
+    )
+    clip_info.add_argument("--output", type=Path)
+    clip_build = subparsers.add_parser("build-clip-index", help="build a cached CLIP image index")
+    clip_build.add_argument("--manifest", type=Path)
+    clip_build.add_argument("--output", type=Path)
+    clip_build.add_argument("--cache", type=Path)
+    clip_build.add_argument("--model-name", default=DEFAULT_CLIP_MODEL)
+    clip_build.add_argument("--device", default="cpu")
+    clip_build.add_argument("--batch-size", type=int, default=8)
+    clip_build.add_argument("--allow-download", action="store_true")
+    clip_search = subparsers.add_parser("search-clip", help="search a CLIP image index")
+    clip_search.add_argument("--query", required=True)
+    clip_search.add_argument("--k", type=int, default=5)
+    clip_search.add_argument("--index", type=Path)
+    clip_search.add_argument("--model-name")
+    clip_search.add_argument("--device", default="cpu")
+    clip_search.add_argument("--batch-size", type=int, default=8)
+    clip_search.add_argument("--allow-download", action="store_true")
+    clip_evaluate = subparsers.add_parser(
+        "evaluate-clip", help="evaluate held-out CLIP text-to-image retrieval"
+    )
+    clip_evaluate.add_argument("--index", type=Path)
+    clip_evaluate.add_argument("--model-name")
+    clip_evaluate.add_argument("--device", default="cpu")
+    clip_evaluate.add_argument("--batch-size", type=int, default=8)
+    clip_evaluate.add_argument("--allow-download", action="store_true")
+    clip_evaluate.add_argument("--report-output", type=Path)
+    clip_evaluate.add_argument("--metrics-output", type=Path)
     return parser
 
 
@@ -105,8 +143,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "project-info":
             print(f"multimodal-retrieval-ops {__version__}")
-            print("Milestone: 4 (embedding abstraction and deterministic multimodal baseline)")
-            print("Runtime: CPU-only; standard library")
+            print("Milestone: 5 (optional CLIP backend and embedding cache)")
+            print("Runtime: lightweight base install; optional CPU/GPU CLIP extra")
         elif args.command == "generate-demo-manifest":
             output = args.output or config.manifest_path
             items = generate_demo_manifest(output)
@@ -205,6 +243,64 @@ def main(argv: list[str] | None = None) -> int:
             )
             print(
                 f"Evaluated {metrics.query_count} held-out text-to-image queries; "
+                f"Recall@1={metrics.recall_at_1:.4f}, MRR={metrics.mrr:.4f}"
+            )
+        elif args.command == "clip-backend-info":
+            available = clip_dependencies_available()
+            output = args.output or config.clip_backend_report_path
+            write_clip_backend_report(available, output)
+            print(f"CLIP dependencies: {'available' if available else 'not installed'}")
+            print(f"Default model: {DEFAULT_CLIP_MODEL}")
+            if not available:
+                print(clip_dependency_message())
+            print(f"Wrote backend report to {output}")
+        elif args.command == "build-clip-index":
+            manifest = args.manifest or config.dataset_manifest_path
+            output = args.output or config.clip_index_path
+            cache_path = args.cache or config.clip_cache_path
+            items = read_manifest(manifest)
+            backend = ClipEmbeddingBackend(
+                model_name=args.model_name,
+                device=args.device,
+                batch_size=args.batch_size,
+                allow_download=args.allow_download,
+            )
+            index, reused = build_clip_index(items, backend, cache_path)
+            write_multimodal_index(index, output)
+            print(
+                f"Built CLIP index with {len(index.entries)} items at {output} "
+                f"(cache {'reused' if reused else 'created'})"
+            )
+        elif args.command == "search-clip":
+            index_path = args.index or config.clip_index_path
+            index = load_multimodal_index(index_path)
+            model_name = args.model_name or index.model_name or DEFAULT_CLIP_MODEL
+            backend = ClipEmbeddingBackend(
+                model_name=model_name,
+                device=args.device,
+                batch_size=args.batch_size,
+                allow_download=args.allow_download,
+            )
+            backend.ensure_loaded()
+            results = search_multimodal_index(args.query, backend, index, k=args.k)
+            print(json.dumps([asdict(result) for result in results], indent=2, sort_keys=True))
+        elif args.command == "evaluate-clip":
+            index_path = args.index or config.clip_index_path
+            index = load_multimodal_index(index_path)
+            model_name = args.model_name or index.model_name or DEFAULT_CLIP_MODEL
+            backend = ClipEmbeddingBackend(
+                model_name=model_name,
+                device=args.device,
+                batch_size=args.batch_size,
+                allow_download=args.allow_download,
+            )
+            backend.ensure_loaded()
+            metrics, _ = evaluate_multimodal_index(backend, index)
+            report_output = args.report_output or config.clip_report_path
+            metrics_output = args.metrics_output or config.clip_metrics_path
+            write_clip_retrieval_reports(metrics, model_name, report_output, metrics_output)
+            print(
+                f"Evaluated {metrics.query_count} held-out CLIP queries; "
                 f"Recall@1={metrics.recall_at_1:.4f}, MRR={metrics.mrr:.4f}"
             )
     except (ManifestValidationError, ValueError) as error:
