@@ -28,3 +28,21 @@ and its deterministic summary is written to `reports/demo_manifest_summary.md`.
 
 Custom paths are supported with `--output` and `--manifest`; run any command with `--help` for
 details. Run all local quality checks with `make check`.
+
+## Milestone 2: local dataset ingestion
+
+Milestone 2 adds a canonical local image-caption registry. It ingests existing canonical CSV
+manifests or a directory containing `captions.csv` and referenced images, checks local paths and
+supported extensions (`.jpg`, `.jpeg`, `.png`, `.webp`), assigns seeded deterministic splits, and
+produces dataset quality statistics without downloading data or loading image/model libraries.
+
+```bash
+multimodal-retrieval-ops ingest-local-fixture
+multimodal-retrieval-ops split-manifest
+multimodal-retrieval-ops inspect-manifest
+```
+
+The default workflow reads the tiny tracked fixture in `tests/fixtures/local_dataset`, writes
+generated manifests under `data/processed/`, and updates the deterministic tracked report at
+`reports/dataset_inspection_report.md`. Split fractions can be configured with
+`--train-fraction`, `--validation-fraction`, and `--test-fraction`; the seed defaults to `42`.

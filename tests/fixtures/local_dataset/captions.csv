@@ -1,0 +1,6 @@
+item_id,image_file,caption,source
+fixture-001,images/red_square.jpg,A bright red square.,local-fixture
+fixture-002,images/blue_circle.jpeg,A blue circle on white.,local-fixture
+fixture-003,images/green_triangle.png,A small green triangle.,local-fixture
+fixture-004,images/yellow_star.webp,A yellow star shape.,local-fixture
+fixture-005,images/purple_line.png,A purple diagonal line.,local-fixture

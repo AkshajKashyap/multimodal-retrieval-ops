@@ -6,6 +6,7 @@ from pathlib import Path
 
 REQUIRED_COLUMNS = ("item_id", "image_path", "caption", "split", "source")
 VALID_SPLITS = ("train", "validation", "test")
+SUPPORTED_IMAGE_EXTENSIONS = frozenset({".jpg", ".jpeg", ".png", ".webp"})
 
 
 @dataclass(frozen=True)
@@ -27,8 +28,8 @@ class ManifestValidationError(ValueError):
         super().__init__("Manifest validation failed:\n- " + "\n- ".join(errors))
 
 
-def read_manifest(path: Path) -> list[ManifestItem]:
-    """Read and validate a UTF-8 CSV manifest."""
+def read_manifest_rows(path: Path) -> list[ManifestItem]:
+    """Read canonical rows from a UTF-8 CSV, checking its schema only."""
     if not path.is_file():
         raise ManifestValidationError([f"manifest file does not exist: {path}"])
     with path.open(newline="", encoding="utf-8") as manifest_file:
@@ -37,7 +38,14 @@ def read_manifest(path: Path) -> list[ManifestItem]:
         missing = [column for column in REQUIRED_COLUMNS if column not in columns]
         if missing:
             raise ManifestValidationError([f"missing required columns: {', '.join(missing)}"])
-        rows = [ManifestItem(**{column: row[column] for column in REQUIRED_COLUMNS}) for row in reader]
+        return [
+            ManifestItem(**{column: row[column] for column in REQUIRED_COLUMNS}) for row in reader
+        ]
+
+
+def read_manifest(path: Path) -> list[ManifestItem]:
+    """Read and strictly validate a UTF-8 CSV manifest."""
+    rows = read_manifest_rows(path)
     validate_items(rows)
     return rows
 
@@ -76,3 +84,21 @@ def write_manifest(items: list[ManifestItem], path: Path) -> None:
         writer = csv.DictWriter(manifest_file, fieldnames=REQUIRED_COLUMNS, lineterminator="\n")
         writer.writeheader()
         writer.writerows(item.__dict__ for item in items)
+
+
+def validate_image_paths(items: list[ManifestItem], base_path: Path = Path(".")) -> None:
+    """Validate that image references use supported extensions and exist locally."""
+    errors: list[str] = []
+    for row_number, item in enumerate(items, start=2):
+        image_path = Path(item.image_path)
+        if image_path.suffix.lower() not in SUPPORTED_IMAGE_EXTENSIONS:
+            supported = ", ".join(sorted(SUPPORTED_IMAGE_EXTENSIONS))
+            errors.append(
+                f"row {row_number}: unsupported image extension '{image_path.suffix}' "
+                f"(supported: {supported})"
+            )
+        resolved = image_path if image_path.is_absolute() else base_path / image_path
+        if not resolved.is_file():
+            errors.append(f"row {row_number}: image does not exist: {item.image_path}")
+    if errors:
+        raise ManifestValidationError(errors)

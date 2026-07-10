@@ -7,10 +7,14 @@ import tomllib
 
 @dataclass(frozen=True)
 class ProjectConfig:
-    """Paths used by the Milestone 1 commands."""
+    """Paths used by the project commands."""
 
     manifest_path: Path = Path("data/processed/demo_manifest.csv")
     report_path: Path = Path("reports/demo_manifest_summary.md")
+    fixture_path: Path = Path("tests/fixtures/local_dataset")
+    ingested_manifest_path: Path = Path("data/processed/local_fixture_manifest.csv")
+    dataset_manifest_path: Path = Path("data/processed/dataset_manifest.csv")
+    inspection_report_path: Path = Path("reports/dataset_inspection_report.md")
 
 
 def load_config(path: Path | None = None) -> ProjectConfig:
@@ -23,4 +27,14 @@ def load_config(path: Path | None = None) -> ProjectConfig:
     return ProjectConfig(
         manifest_path=Path(project.get("manifest_path", ProjectConfig.manifest_path)),
         report_path=Path(project.get("report_path", ProjectConfig.report_path)),
+        fixture_path=Path(project.get("fixture_path", ProjectConfig.fixture_path)),
+        ingested_manifest_path=Path(
+            project.get("ingested_manifest_path", ProjectConfig.ingested_manifest_path)
+        ),
+        dataset_manifest_path=Path(
+            project.get("dataset_manifest_path", ProjectConfig.dataset_manifest_path)
+        ),
+        inspection_report_path=Path(
+            project.get("inspection_report_path", ProjectConfig.inspection_report_path)
+        ),
     )
