@@ -128,3 +128,58 @@ normalized embeddings for five fixture images. It evaluated two held-out queries
 Recall@1/5/10 of `1.0000`, MRR `1.0000`, median rank `1.00`, and mean rank `1.00`. These figures only
 show that real neural text/image encoding and retrieval execute end to end on deliberately obvious
 tiny images; they are not a meaningful quality benchmark.
+
+## Milestone 6: multi-caption schema and Flickr8k protocol
+
+Schema v2 separates image candidates from caption queries:
+
+- `image_id` identifies an image and may repeat across caption rows.
+- `caption_id` identifies one query and must be globally unique.
+- Every row for one image must use the same `image_path` and `split`.
+- Splitting and seeded subsetting operate on image groups, so captions for one image cannot leak
+  across train, validation, and test.
+- Image indexes contain one candidate vector per `image_id`; evaluation may issue several caption
+  queries whose correct target is that same image.
+
+Legacy manifests with `item_id` remain valid. Migration deterministically maps `item_id` to
+`image_id` and creates `<item_id>-caption-001` as the caption identity:
+
+```bash
+multimodal-retrieval-ops migrate-manifest-v2
+multimodal-retrieval-ops validate-manifest
+```
+
+Flickr8k is never downloaded automatically. A typical user-provided local layout is:
+
+```text
+/datasets/Flickr8k/
+├── Images/
+│   ├── 1000268201_693b08cb0e.jpg
+│   └── ...
+└── captions.txt              # image,caption CSV
+```
+
+The original tab-separated `Flickr8k.token.txt` format (`image.jpg#0<TAB>caption`) is also
+supported. Ingest and create a deterministic image-group subset with:
+
+```bash
+multimodal-retrieval-ops ingest-flickr8k \
+  --images-dir /datasets/Flickr8k/Images \
+  --captions-file /datasets/Flickr8k/captions.txt
+multimodal-retrieval-ops create-benchmark-subset --max-images 1000 --seed 42
+multimodal-retrieval-ops evaluate-clip-benchmark \
+  --model-name openai/clip-vit-base-patch32 --device cpu --batch-size 16
+```
+
+Or run the opt-in workflow using Make variables:
+
+```bash
+make clip-benchmark \
+  FLICKR8K_IMAGES_DIR=/datasets/Flickr8k/Images \
+  FLICKR8K_CAPTIONS_FILE=/datasets/Flickr8k/captions.txt
+```
+
+The benchmark compares the lexical, deterministic placeholder, and real zero-shot CLIP paths using
+exact cosine search. The earlier five-image fixture metrics remain integration checks; they are
+distinct from a real Flickr8k benchmark. This repository had no local Flickr8k copy during
+Milestone 6 implementation, so the tracked real-benchmark report is explicitly `not_run`.

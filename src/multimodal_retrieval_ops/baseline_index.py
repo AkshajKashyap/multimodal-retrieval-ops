@@ -4,7 +4,7 @@ from dataclasses import asdict, dataclass
 import json
 from pathlib import Path
 
-from .manifest import ManifestItem
+from .manifest import ManifestRecord, image_identity
 from .text_baseline import build_vocabulary, encode_text
 
 
@@ -16,6 +16,7 @@ class IndexEntry:
     split: str
     source: str
     vector: list[float]
+    query_captions: list[str] | None = None
 
 
 @dataclass(frozen=True)
@@ -27,19 +28,23 @@ class SearchResult:
     split: str
 
 
-def build_index(items: list[ManifestItem]) -> tuple[list[str], list[IndexEntry]]:
+def build_index(items: list[ManifestRecord]) -> tuple[list[str], list[IndexEntry]]:
     """Fit the train vocabulary and encode every registered candidate."""
     vocabulary = build_vocabulary(items)
+    grouped: dict[str, list[ManifestRecord]] = {}
+    for item in items:
+        grouped.setdefault(image_identity(item), []).append(item)
     entries = [
         IndexEntry(
-            item_id=item.item_id,
-            image_path=item.image_path,
-            caption=item.caption,
-            split=item.split,
-            source=item.source,
-            vector=encode_text(item.caption, vocabulary),
+            item_id=image_id,
+            image_path=group[0].image_path,
+            caption=" ".join(item.caption for item in group),
+            split=group[0].split,
+            source=group[0].source,
+            vector=encode_text(" ".join(item.caption for item in group), vocabulary),
+            query_captions=[item.caption for item in group],
         )
-        for item in items
+        for image_id, group in grouped.items()
     ]
     return vocabulary, entries
 

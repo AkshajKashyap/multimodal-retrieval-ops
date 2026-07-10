@@ -7,6 +7,7 @@ from pathlib import Path
 
 from . import __version__
 from .baseline_index import build_index, exact_search, load_index, write_index
+from .benchmark import run_clip_benchmark
 from .clip_backend import (
     DEFAULT_CLIP_MODEL,
     ClipBackendError,
@@ -26,10 +27,18 @@ from .config import load_config
 from .demo import generate_demo_manifest
 from .deterministic_image_encoder import DeterministicImageEncoder
 from .deterministic_text_encoder import DeterministicTextEncoder
+from .flickr8k import (
+    create_benchmark_subset,
+    ingest_flickr8k,
+    multi_caption_statistics,
+    render_flickr8k_report,
+)
 from .ingestion import ingest_local_directory
 from .inspection import inspect_items, write_dataset_report
 from .manifest import (
+    ManifestItemV2,
     ManifestValidationError,
+    migrate_to_v2,
     read_manifest,
     read_manifest_rows,
     validate_image_paths,
@@ -148,6 +157,31 @@ def build_parser() -> argparse.ArgumentParser:
     clip_evaluate.add_argument("--local-files-only", action="store_true")
     clip_evaluate.add_argument("--report-output", type=Path)
     clip_evaluate.add_argument("--metrics-output", type=Path)
+    migrate = subparsers.add_parser("migrate-manifest-v2", help="migrate a manifest to schema v2")
+    migrate.add_argument("--manifest", type=Path)
+    migrate.add_argument("--output", type=Path)
+    migrate.add_argument("--report-output", type=Path)
+    flickr = subparsers.add_parser("ingest-flickr8k", help="ingest local Flickr8k captions")
+    flickr.add_argument("--images-dir", type=Path, required=True)
+    flickr.add_argument("--captions-file", type=Path, required=True)
+    flickr.add_argument("--output", type=Path)
+    flickr.add_argument("--report-output", type=Path)
+    flickr.add_argument("--seed", type=int, default=42)
+    subset = subparsers.add_parser(
+        "create-benchmark-subset", help="create a seeded image-group benchmark subset"
+    )
+    subset.add_argument("--manifest", type=Path)
+    subset.add_argument("--output", type=Path)
+    subset.add_argument("--max-images", type=int, default=500)
+    subset.add_argument("--seed", type=int, default=42)
+    clip_benchmark = subparsers.add_parser(
+        "evaluate-clip-benchmark", help="run opt-in multi-caption CLIP benchmark"
+    )
+    clip_benchmark.add_argument("--manifest", type=Path)
+    clip_benchmark.add_argument("--model-name", default=DEFAULT_CLIP_MODEL)
+    clip_benchmark.add_argument("--device", default="cpu")
+    clip_benchmark.add_argument("--batch-size", type=int, default=16)
+    clip_benchmark.add_argument("--local-files-only", action="store_true")
     return parser
 
 
@@ -157,14 +191,18 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "project-info":
             print(f"multimodal-retrieval-ops {__version__}")
-            print("Milestone: 5.5 (verified CLIP retrieval and embedding cache)")
+            print("Milestone: 6 (multi-caption schema and Flickr8k benchmark protocol)")
             print("Runtime: lightweight base install; optional CPU/GPU CLIP extra")
         elif args.command == "generate-demo-manifest":
             output = args.output or config.manifest_path
             items = generate_demo_manifest(output)
             print(f"Wrote {len(items)} rows to {output}")
         elif args.command == "validate-manifest":
-            manifest = args.manifest or config.manifest_path
+            manifest = args.manifest or (
+                config.dataset_manifest_path
+                if config.dataset_manifest_path.is_file()
+                else config.manifest_path
+            )
             items = read_manifest(manifest)
             print(f"Valid manifest: {manifest} ({len(items)} rows)")
         elif args.command == "generate-manifest-report":
@@ -364,6 +402,87 @@ def main(argv: list[str] | None = None) -> int:
             print(
                 f"Evaluated {metrics.query_count} held-out CLIP queries; "
                 f"Recall@1={metrics.recall_at_1:.4f}, MRR={metrics.mrr:.4f}"
+            )
+        elif args.command == "migrate-manifest-v2":
+            manifest = args.manifest or config.dataset_manifest_path
+            output = args.output or manifest
+            report_output = args.report_output or config.schema_v2_report_path
+            source_rows = read_manifest(manifest)
+            rows = migrate_to_v2(source_rows)
+            write_manifest(rows, output)
+            stats = multi_caption_statistics(rows)
+            report_output.parent.mkdir(parents=True, exist_ok=True)
+            report_output.write_text(
+                "\n".join(
+                    [
+                        "# Schema v2 Migration Report",
+                        "",
+                        "Status: **successfully migrated**",
+                        "",
+                        f"- Source rows: {len(source_rows)}",
+                        f"- Unique images: {stats.unique_images}",
+                        f"- Caption queries: {stats.caption_queries}",
+                        f"- Output: `{output.as_posix()}`",
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            print(
+                f"Migrated {len(rows)} caption rows across {stats.unique_images} "
+                f"images to {output}"
+            )
+        elif args.command == "ingest-flickr8k":
+            output = args.output or config.flickr8k_manifest_path
+            report_output = args.report_output or config.flickr8k_report_path
+            rows = ingest_flickr8k(
+                args.images_dir, args.captions_file, output, seed=args.seed
+            )
+            report_output.parent.mkdir(parents=True, exist_ok=True)
+            report_output.write_text(render_flickr8k_report(rows), encoding="utf-8")
+            stats = multi_caption_statistics(rows)
+            print(
+                f"Ingested {stats.caption_queries} captions for {stats.unique_images} "
+                f"images to {output}"
+            )
+        elif args.command == "create-benchmark-subset":
+            manifest = args.manifest or config.flickr8k_manifest_path
+            output = args.output or config.benchmark_manifest_path
+            raw_rows = read_manifest(manifest)
+            rows = [row for row in raw_rows if isinstance(row, ManifestItemV2)]
+            if len(rows) != len(raw_rows):
+                raise ValueError("benchmark subsetting requires a schema-v2 manifest")
+            subset_rows = create_benchmark_subset(rows, args.max_images, seed=args.seed)
+            write_manifest(subset_rows, output)
+            stats = multi_caption_statistics(subset_rows)
+            print(
+                f"Created benchmark subset with {stats.unique_images} images and "
+                f"{stats.caption_queries} captions at {output}"
+            )
+        elif args.command == "evaluate-clip-benchmark":
+            manifest = args.manifest or config.benchmark_manifest_path
+            raw_rows = read_manifest(manifest)
+            rows = [row for row in raw_rows if isinstance(row, ManifestItemV2)]
+            if len(rows) != len(raw_rows):
+                raise ValueError("CLIP benchmark requires a schema-v2 manifest")
+            backend = ClipEmbeddingBackend(
+                model_name=args.model_name,
+                device=args.device,
+                batch_size=args.batch_size,
+                allow_download=not args.local_files_only,
+            )
+            metrics, cache_hit = run_clip_benchmark(
+                rows,
+                backend,
+                cache_path=config.clip_benchmark_cache_path,
+                index_path=config.clip_benchmark_index_path,
+                report_path=config.clip_benchmark_report_path,
+                metrics_path=config.clip_benchmark_metrics_path,
+            )
+            print(
+                f"Evaluated {metrics.query_count} Flickr8k caption queries; "
+                f"Recall@1={metrics.recall_at_1:.4f}; "
+                f"cache={'hit' if cache_hit else 'miss'}"
             )
     except ClipBackendError as error:
         if isinstance(error, ClipModelUnavailableError):

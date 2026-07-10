@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 from .embedding_backends import ImageEncoder, TextEncoder
-from .manifest import ManifestItem
+from .manifest import ManifestRecord, caption_identity, image_identity
 
 
 @dataclass(frozen=True)
@@ -16,6 +16,14 @@ class MultimodalIndexEntry:
     split: str
     source: str
     vector: list[float]
+
+
+@dataclass(frozen=True)
+class CaptionQuery:
+    caption_id: str
+    image_id: str
+    caption: str
+    split: str
 
 
 @dataclass(frozen=True)
@@ -34,25 +42,35 @@ class MultimodalIndex:
     dimension: int
     entries: list[MultimodalIndexEntry]
     model_name: str | None = None
+    queries: list[CaptionQuery] | None = None
 
 
 def build_multimodal_index(
-    items: list[ManifestItem], image_encoder: ImageEncoder, text_encoder: TextEncoder
+    items: list[ManifestRecord], image_encoder: ImageEncoder, text_encoder: TextEncoder
 ) -> MultimodalIndex:
     """Encode exactly one image candidate for every unique manifest item."""
     if image_encoder.dimension != text_encoder.dimension:
         raise ValueError("text and image encoder dimensions must match")
-    item_ids = [item.item_id for item in items]
-    if len(item_ids) != len(set(item_ids)):
-        raise ValueError("multimodal index requires unique item_id values")
+    candidates: dict[str, ManifestRecord] = {}
+    for item in items:
+        candidates.setdefault(image_identity(item), item)
     entries = [
         MultimodalIndexEntry(
-            item_id=item.item_id,
+            item_id=image_id,
             image_path=item.image_path,
             caption=item.caption,
             split=item.split,
             source=item.source,
             vector=image_encoder.encode_image(item.image_path),
+        )
+        for image_id, item in candidates.items()
+    ]
+    queries = [
+        CaptionQuery(
+            caption_id=caption_identity(item),
+            image_id=image_identity(item),
+            caption=item.caption,
+            split=item.split,
         )
         for item in items
     ]
@@ -62,6 +80,7 @@ def build_multimodal_index(
         dimension=text_encoder.dimension,
         entries=entries,
         model_name=None,
+        queries=queries,
     )
 
 
@@ -81,6 +100,11 @@ def load_multimodal_index(path: Path) -> MultimodalIndex:
         dimension=data["dimension"],
         entries=[MultimodalIndexEntry(**entry) for entry in data["entries"]],
         model_name=data.get("model_name"),
+        queries=(
+            [CaptionQuery(**query) for query in data["queries"]]
+            if data.get("queries") is not None
+            else None
+        ),
     )
 
 

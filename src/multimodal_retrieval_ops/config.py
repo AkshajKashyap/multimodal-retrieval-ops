@@ -27,6 +27,15 @@ class ProjectConfig:
     clip_backend_report_path: Path = Path("reports/clip_backend_report.md")
     clip_report_path: Path = Path("reports/clip_retrieval_report.md")
     clip_metrics_path: Path = Path("reports/clip_retrieval_metrics.json")
+    schema_v2_manifest_path: Path = Path("data/processed/manifest_v2.csv")
+    flickr8k_manifest_path: Path = Path("data/processed/flickr8k_manifest_v2.csv")
+    benchmark_manifest_path: Path = Path("data/processed/flickr8k_benchmark_v2.csv")
+    schema_v2_report_path: Path = Path("reports/schema_v2_migration_report.md")
+    flickr8k_report_path: Path = Path("reports/flickr8k_dataset_report.md")
+    clip_benchmark_index_path: Path = Path("artifacts/clip/flickr8k_index.json")
+    clip_benchmark_cache_path: Path = Path("artifacts/clip/flickr8k_cache.json")
+    clip_benchmark_report_path: Path = Path("reports/clip_real_benchmark_report.md")
+    clip_benchmark_metrics_path: Path = Path("reports/clip_real_benchmark_metrics.json")
 
 
 def load_config(path: Path | None = None) -> ProjectConfig:
@@ -77,4 +86,31 @@ def load_config(path: Path | None = None) -> ProjectConfig:
         ),
         clip_report_path=Path(project.get("clip_report_path", ProjectConfig.clip_report_path)),
         clip_metrics_path=Path(project.get("clip_metrics_path", ProjectConfig.clip_metrics_path)),
+        schema_v2_manifest_path=Path(
+            project.get("schema_v2_manifest_path", ProjectConfig.schema_v2_manifest_path)
+        ),
+        flickr8k_manifest_path=Path(
+            project.get("flickr8k_manifest_path", ProjectConfig.flickr8k_manifest_path)
+        ),
+        benchmark_manifest_path=Path(
+            project.get("benchmark_manifest_path", ProjectConfig.benchmark_manifest_path)
+        ),
+        schema_v2_report_path=Path(
+            project.get("schema_v2_report_path", ProjectConfig.schema_v2_report_path)
+        ),
+        flickr8k_report_path=Path(
+            project.get("flickr8k_report_path", ProjectConfig.flickr8k_report_path)
+        ),
+        clip_benchmark_index_path=Path(
+            project.get("clip_benchmark_index_path", ProjectConfig.clip_benchmark_index_path)
+        ),
+        clip_benchmark_cache_path=Path(
+            project.get("clip_benchmark_cache_path", ProjectConfig.clip_benchmark_cache_path)
+        ),
+        clip_benchmark_report_path=Path(
+            project.get("clip_benchmark_report_path", ProjectConfig.clip_benchmark_report_path)
+        ),
+        clip_benchmark_metrics_path=Path(
+            project.get("clip_benchmark_metrics_path", ProjectConfig.clip_benchmark_metrics_path)
+        ),
     )

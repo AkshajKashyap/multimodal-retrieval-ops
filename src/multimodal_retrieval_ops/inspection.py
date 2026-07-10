@@ -4,7 +4,7 @@ from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
-from .manifest import ManifestItem, SUPPORTED_IMAGE_EXTENSIONS, VALID_SPLITS
+from .manifest import ManifestRecord, SUPPORTED_IMAGE_EXTENSIONS, VALID_SPLITS, caption_identity
 
 
 @dataclass(frozen=True)
@@ -20,10 +20,10 @@ class DatasetStatistics:
     duplicate_caption_count: int
 
 
-def inspect_items(items: list[ManifestItem], base_path: Path = Path(".")) -> DatasetStatistics:
+def inspect_items(items: list[ManifestRecord], base_path: Path = Path(".")) -> DatasetStatistics:
     """Compute lightweight, stable quality metrics for manifest rows."""
     lengths = [len(item.caption.split()) for item in items]
-    item_counts = Counter(item.item_id for item in items)
+    item_counts = Counter(caption_identity(item) for item in items)
     caption_counts = Counter(item.caption for item in items)
     missing = 0
     for item in items:

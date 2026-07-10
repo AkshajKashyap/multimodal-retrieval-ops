@@ -5,7 +5,7 @@ import hashlib
 import json
 from pathlib import Path
 
-from .manifest import ManifestItem
+from .manifest import ManifestRecord, image_identity
 
 
 @dataclass(frozen=True)
@@ -25,7 +25,7 @@ class EmbeddingCache:
     image_embeddings: dict[str, list[float]]
 
 
-def manifest_digest(items: list[ManifestItem]) -> str:
+def manifest_digest(items: list[ManifestRecord]) -> str:
     """Hash canonical manifest contents independent of CSV formatting."""
     rows = [asdict(item) for item in items]
     payload = json.dumps(rows, separators=(",", ":"), sort_keys=True).encode("utf-8")
@@ -33,7 +33,7 @@ def manifest_digest(items: list[ManifestItem]) -> str:
 
 
 def make_cache_metadata(
-    items: list[ManifestItem],
+    items: list[ManifestRecord],
     *,
     backend_name: str,
     backend_version: str,
@@ -45,7 +45,7 @@ def make_cache_metadata(
         backend_version=backend_version,
         model_name=model_name,
         manifest_hash=manifest_digest(items),
-        item_count=len(items),
+        item_count=len({image_identity(item) for item in items}),
         embedding_dimension=embedding_dimension,
     )
 

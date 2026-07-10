@@ -1,0 +1,6 @@
+red_square.jpg#0	A bright red square.
+red_square.jpg#1	A solid crimson block.
+blue_circle.jpeg#0	A blue circle on white.
+blue_circle.jpeg#1	A round blue shape.
+green_triangle.png#0	A small green triangle.
+green_triangle.png#1	A green three-sided shape.

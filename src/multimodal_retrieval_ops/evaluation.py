@@ -41,18 +41,25 @@ def evaluate_index(
     evaluation_splits: set[str] | frozenset[str] = EVALUATION_SPLITS,
 ) -> tuple[RetrievalMetrics, list[int]]:
     """Evaluate held-out captions against held-out candidates only."""
-    queries = [entry for entry in entries if entry.split in evaluation_splits]
-    candidate_count = len(queries)
+    query_entries = [entry for entry in entries if entry.split in evaluation_splits]
+    candidate_count = len(query_entries)
     if candidate_count == 0:
         raise ValueError("index has no validation/test queries to evaluate")
     ranks: list[int] = []
-    for query in queries:
-        results = exact_search(
-            query.caption,
-            vocabulary,
-            entries,
-            k=candidate_count,
-            allowed_splits=set(evaluation_splits),
-        )
-        ranks.append(next(index for index, result in enumerate(results, start=1) if result.item_id == query.item_id))
+    for query in query_entries:
+        for caption in query.query_captions or [query.caption]:
+            results = exact_search(
+                caption,
+                vocabulary,
+                entries,
+                k=candidate_count,
+                allowed_splits=set(evaluation_splits),
+            )
+            ranks.append(
+                next(
+                    index
+                    for index, result in enumerate(results, start=1)
+                    if result.item_id == query.item_id
+                )
+            )
     return metrics_from_ranks(ranks), ranks
