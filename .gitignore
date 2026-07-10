@@ -7,4 +7,5 @@ data/processed/
 artifacts/
 logs/
 *.pyc
+*.egg-info/
 .DS_Store

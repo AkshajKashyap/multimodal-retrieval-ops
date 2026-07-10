@@ -5,6 +5,9 @@ description = "Production-style image-text retrieval system with CLIP-style embe
 requires-python = ">=3.11"
 dependencies = []
 
+[project.scripts]
+multimodal-retrieval-ops = "multimodal_retrieval_ops.cli:main"
+
 [project.optional-dependencies]
 dev = ["pytest", "ruff"]
 
