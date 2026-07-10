@@ -46,3 +46,21 @@ The default workflow reads the tiny tracked fixture in `tests/fixtures/local_dat
 generated manifests under `data/processed/`, and updates the deterministic tracked report at
 `reports/dataset_inspection_report.md`. Split fractions can be configured with
 `--train-fraction`, `--validation-fraction`, and `--test-fraction`; the seed defaults to `42`.
+
+## Milestone 3: lexical retrieval baseline
+
+Milestone 3 provides the first retrieval and evaluation backbone. This is a deterministic lexical
+bag-of-words baseline—not a multimodal neural model. Its vocabulary is fitted only on train
+captions, vectors are L2-normalized, and search uses exact cosine similarity with stable tie
+breaking. By default, evaluation uses validation/test captions as queries and limits candidates to
+those same held-out splits.
+
+```bash
+multimodal-retrieval-ops build-text-baseline-index
+multimodal-retrieval-ops search-text-baseline --query "red car"
+multimodal-retrieval-ops evaluate-text-baseline
+```
+
+The generated index and vocabulary live under `artifacts/baseline/` and remain ignored. The small,
+deterministic Markdown and JSON evaluation summaries are tracked under `reports/`. Reported metrics
+are Recall@1, Recall@5, Recall@10, MRR, median rank, mean rank, and query count.

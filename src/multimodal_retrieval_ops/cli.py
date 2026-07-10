@@ -1,9 +1,12 @@
 """Command-line interface for project foundation workflows."""
 
 import argparse
+from dataclasses import asdict
+import json
 from pathlib import Path
 
 from . import __version__
+from .baseline_index import build_index, exact_search, load_index, write_index
 from .config import load_config
 from .demo import generate_demo_manifest
 from .ingestion import ingest_local_directory
@@ -16,6 +19,8 @@ from .manifest import (
     write_manifest,
 )
 from .reporting import write_manifest_report
+from .evaluation import evaluate_index
+from .retrieval_reporting import write_retrieval_reports
 from .splitting import assign_splits
 
 
@@ -45,6 +50,24 @@ def build_parser() -> argparse.ArgumentParser:
     inspect = subparsers.add_parser("inspect-manifest", help="write dataset quality report")
     inspect.add_argument("--manifest", type=Path)
     inspect.add_argument("--output", type=Path)
+    build = subparsers.add_parser(
+        "build-text-baseline-index", help="build the lexical exact-search index"
+    )
+    build.add_argument("--manifest", type=Path)
+    build.add_argument("--index-output", type=Path)
+    build.add_argument("--vocab-output", type=Path)
+    search = subparsers.add_parser("search-text-baseline", help="search the lexical index")
+    search.add_argument("--query", required=True)
+    search.add_argument("--k", type=int, default=5)
+    search.add_argument("--index", type=Path)
+    search.add_argument("--vocab", type=Path)
+    evaluate = subparsers.add_parser(
+        "evaluate-text-baseline", help="evaluate held-out lexical retrieval"
+    )
+    evaluate.add_argument("--index", type=Path)
+    evaluate.add_argument("--vocab", type=Path)
+    evaluate.add_argument("--report-output", type=Path)
+    evaluate.add_argument("--metrics-output", type=Path)
     return parser
 
 
@@ -54,7 +77,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "project-info":
             print(f"multimodal-retrieval-ops {__version__}")
-            print("Milestone: 2 (dataset ingestion and local image-caption registry)")
+            print("Milestone: 3 (model-free baseline retrieval and evaluation)")
             print("Runtime: CPU-only; standard library")
         elif args.command == "generate-demo-manifest":
             output = args.output or config.manifest_path
@@ -95,6 +118,35 @@ def main(argv: list[str] | None = None) -> int:
             statistics = inspect_items(items)
             write_dataset_report(statistics, output)
             print(f"Inspected {statistics.row_count} rows; wrote report to {output}")
+        elif args.command == "build-text-baseline-index":
+            manifest = args.manifest or config.dataset_manifest_path
+            index_output = args.index_output or config.baseline_index_path
+            vocab_output = args.vocab_output or config.baseline_vocab_path
+            items = read_manifest(manifest)
+            vocabulary, entries = build_index(items)
+            write_index(vocabulary, entries, index_output, vocab_output)
+            print(
+                f"Built lexical index with {len(entries)} items and {len(vocabulary)} "
+                f"train-vocabulary tokens at {index_output}"
+            )
+        elif args.command == "search-text-baseline":
+            index_path = args.index or config.baseline_index_path
+            vocab_path = args.vocab or config.baseline_vocab_path
+            vocabulary, entries = load_index(index_path, vocab_path)
+            results = exact_search(args.query, vocabulary, entries, k=args.k)
+            print(json.dumps([asdict(result) for result in results], indent=2, sort_keys=True))
+        elif args.command == "evaluate-text-baseline":
+            index_path = args.index or config.baseline_index_path
+            vocab_path = args.vocab or config.baseline_vocab_path
+            report_output = args.report_output or config.baseline_report_path
+            metrics_output = args.metrics_output or config.baseline_metrics_path
+            vocabulary, entries = load_index(index_path, vocab_path)
+            metrics, _ = evaluate_index(vocabulary, entries)
+            write_retrieval_reports(metrics, report_output, metrics_output)
+            print(
+                f"Evaluated {metrics.query_count} held-out queries; "
+                f"Recall@1={metrics.recall_at_1:.4f}, MRR={metrics.mrr:.4f}"
+            )
     except (ManifestValidationError, ValueError) as error:
         build_parser().error(str(error))
     return 0
