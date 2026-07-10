@@ -20,5 +20,6 @@ class DeterministicImageEncoder:
         if not path.is_file():
             raise ValueError(f"image does not exist: {image_path}")
         byte_text = path.read_bytes().decode("utf-8", errors="ignore")
-        features = [*tokenize(path.stem), *tokenize(byte_text)]
+        path_features = tokenize(path.stem)
+        features = [*(path_features * 8), *tokenize(byte_text)]
         return normalized_hashed_vector(features, self.dimension)

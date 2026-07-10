@@ -1,7 +1,21 @@
 # CLIP Retrieval Report
 
-Status: **not run**
+Execution status: **successfully executed**
 
-The optional CLIP backend was scaffolded but no model weights were loaded. Run
-`multimodal-retrieval-ops evaluate-clip` after installing the `clip` extra and making model
-weights available locally. Tiny fixture results are not a quality benchmark.
+- Model: `openai/clip-vit-base-patch32`
+- Device: `cpu`
+- Embedding dimension: 512
+- Indexed items: 5
+- Evaluation queries: 2
+
+Results depend on real model weights. The tiny local fixture is not a quality benchmark.
+
+| Metric | Value |
+| --- | ---: |
+| Recall@1 | 1.0000 |
+| Recall@5 | 1.0000 |
+| Recall@10 | 1.0000 |
+| MRR | 1.0000 |
+| Median rank | 1.00 |
+| Mean rank | 1.00 |
+| Query count | 2 |

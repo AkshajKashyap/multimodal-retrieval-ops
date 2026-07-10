@@ -9,11 +9,18 @@ from . import __version__
 from .baseline_index import build_index, exact_search, load_index, write_index
 from .clip_backend import (
     DEFAULT_CLIP_MODEL,
+    ClipBackendError,
     ClipEmbeddingBackend,
+    ClipExecutionError,
+    ClipModelUnavailableError,
     clip_dependencies_available,
     clip_dependency_message,
 )
-from .clip_reporting import write_clip_backend_report, write_clip_retrieval_reports
+from .clip_reporting import (
+    write_clip_backend_report,
+    write_clip_failure_reports,
+    write_clip_retrieval_reports,
+)
 from .clip_workflow import build_clip_index
 from .config import load_config
 from .demo import generate_demo_manifest
@@ -108,6 +115,10 @@ def build_parser() -> argparse.ArgumentParser:
         "clip-backend-info", help="show optional CLIP backend availability"
     )
     clip_info.add_argument("--output", type=Path)
+    clip_info.add_argument("--model-name")
+    clip_info.add_argument("--device", default="cpu")
+    clip_info.add_argument("--batch-size", type=int, default=8)
+    clip_info.add_argument("--local-files-only", action="store_true")
     clip_build = subparsers.add_parser("build-clip-index", help="build a cached CLIP image index")
     clip_build.add_argument("--manifest", type=Path)
     clip_build.add_argument("--output", type=Path)
@@ -116,6 +127,7 @@ def build_parser() -> argparse.ArgumentParser:
     clip_build.add_argument("--device", default="cpu")
     clip_build.add_argument("--batch-size", type=int, default=8)
     clip_build.add_argument("--allow-download", action="store_true")
+    clip_build.add_argument("--local-files-only", action="store_true")
     clip_search = subparsers.add_parser("search-clip", help="search a CLIP image index")
     clip_search.add_argument("--query", required=True)
     clip_search.add_argument("--k", type=int, default=5)
@@ -124,6 +136,7 @@ def build_parser() -> argparse.ArgumentParser:
     clip_search.add_argument("--device", default="cpu")
     clip_search.add_argument("--batch-size", type=int, default=8)
     clip_search.add_argument("--allow-download", action="store_true")
+    clip_search.add_argument("--local-files-only", action="store_true")
     clip_evaluate = subparsers.add_parser(
         "evaluate-clip", help="evaluate held-out CLIP text-to-image retrieval"
     )
@@ -132,6 +145,7 @@ def build_parser() -> argparse.ArgumentParser:
     clip_evaluate.add_argument("--device", default="cpu")
     clip_evaluate.add_argument("--batch-size", type=int, default=8)
     clip_evaluate.add_argument("--allow-download", action="store_true")
+    clip_evaluate.add_argument("--local-files-only", action="store_true")
     clip_evaluate.add_argument("--report-output", type=Path)
     clip_evaluate.add_argument("--metrics-output", type=Path)
     return parser
@@ -143,7 +157,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "project-info":
             print(f"multimodal-retrieval-ops {__version__}")
-            print("Milestone: 5 (optional CLIP backend and embedding cache)")
+            print("Milestone: 5.5 (verified CLIP retrieval and embedding cache)")
             print("Runtime: lightweight base install; optional CPU/GPU CLIP extra")
         elif args.command == "generate-demo-manifest":
             output = args.output or config.manifest_path
@@ -248,11 +262,40 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "clip-backend-info":
             available = clip_dependencies_available()
             output = args.output or config.clip_backend_report_path
-            write_clip_backend_report(available, output)
             print(f"CLIP dependencies: {'available' if available else 'not installed'}")
             print(f"Default model: {DEFAULT_CLIP_MODEL}")
-            if not available:
+            if args.model_name and available:
+                backend = ClipEmbeddingBackend(
+                    model_name=args.model_name,
+                    device=args.device,
+                    batch_size=args.batch_size,
+                    allow_download=not args.local_files_only,
+                )
+                backend.ensure_loaded()
+                write_clip_backend_report(
+                    output,
+                    status="successfully executed",
+                    model_name=backend.model_name,
+                    device=backend.device,
+                    dimension=backend.dimension,
+                    detail="Processor and model loaded successfully.",
+                )
+                print(
+                    f"Loaded {backend.model_name} on {backend.device}; "
+                    f"embedding dimension={backend.dimension}"
+                )
+            elif not available:
+                write_clip_backend_report(
+                    output,
+                    status="unavailable dependencies",
+                    detail=clip_dependency_message(),
+                )
                 print(clip_dependency_message())
+            else:
+                write_clip_backend_report(
+                    output,
+                    status="dependencies available; model not loaded",
+                )
             print(f"Wrote backend report to {output}")
         elif args.command == "build-clip-index":
             manifest = args.manifest or config.dataset_manifest_path
@@ -263,12 +306,23 @@ def main(argv: list[str] | None = None) -> int:
                 model_name=args.model_name,
                 device=args.device,
                 batch_size=args.batch_size,
-                allow_download=args.allow_download,
+                allow_download=args.allow_download or not args.local_files_only,
             )
             index, reused = build_clip_index(items, backend, cache_path)
             write_multimodal_index(index, output)
+            write_clip_backend_report(
+                config.clip_backend_report_path,
+                status="successfully executed",
+                model_name=index.model_name or args.model_name,
+                device=args.device,
+                dimension=index.dimension,
+                item_count=len(index.entries),
+                cache_status="hit" if reused else "miss (created)",
+                detail="CLIP image index built successfully.",
+            )
             print(
-                f"Built CLIP index with {len(index.entries)} items at {output} "
+                f"Built {index.dimension}-dimensional CLIP index with {len(index.entries)} "
+                f"items at {output} "
                 f"(cache {'reused' if reused else 'created'})"
             )
         elif args.command == "search-clip":
@@ -279,7 +333,7 @@ def main(argv: list[str] | None = None) -> int:
                 model_name=model_name,
                 device=args.device,
                 batch_size=args.batch_size,
-                allow_download=args.allow_download,
+                allow_download=args.allow_download or not args.local_files_only,
             )
             backend.ensure_loaded()
             results = search_multimodal_index(args.query, backend, index, k=args.k)
@@ -292,17 +346,47 @@ def main(argv: list[str] | None = None) -> int:
                 model_name=model_name,
                 device=args.device,
                 batch_size=args.batch_size,
-                allow_download=args.allow_download,
+                allow_download=args.allow_download or not args.local_files_only,
             )
             backend.ensure_loaded()
             metrics, _ = evaluate_multimodal_index(backend, index)
             report_output = args.report_output or config.clip_report_path
             metrics_output = args.metrics_output or config.clip_metrics_path
-            write_clip_retrieval_reports(metrics, model_name, report_output, metrics_output)
+            write_clip_retrieval_reports(
+                metrics,
+                model_name,
+                report_output,
+                metrics_output,
+                device=args.device,
+                dimension=index.dimension,
+                item_count=len(index.entries),
+            )
             print(
                 f"Evaluated {metrics.query_count} held-out CLIP queries; "
                 f"Recall@1={metrics.recall_at_1:.4f}, MRR={metrics.mrr:.4f}"
             )
+    except ClipBackendError as error:
+        if isinstance(error, ClipModelUnavailableError):
+            status = "unavailable model weights"
+        elif isinstance(error, ClipExecutionError):
+            status = "execution failure"
+        else:
+            status = "unavailable dependencies"
+        write_clip_backend_report(
+            config.clip_backend_report_path,
+            status=status,
+            model_name=getattr(args, "model_name", None) or DEFAULT_CLIP_MODEL,
+            device=getattr(args, "device", "cpu"),
+            detail=str(error),
+        )
+        if args.command == "evaluate-clip":
+            write_clip_failure_reports(
+                status,
+                str(error),
+                getattr(args, "report_output", None) or config.clip_report_path,
+                getattr(args, "metrics_output", None) or config.clip_metrics_path,
+            )
+        build_parser().error(str(error))
     except (ManifestValidationError, ValueError) as error:
         build_parser().error(str(error))
     return 0

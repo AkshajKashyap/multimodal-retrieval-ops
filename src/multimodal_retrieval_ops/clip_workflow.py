@@ -42,9 +42,13 @@ def build_clip_index(
                 cache = candidate
     cache_reused = cache is not None
     if cache is None:
-        text_embeddings = {item.item_id: backend.encode_text(item.caption) for item in items}
+        text_vectors = backend.encode_texts([item.caption for item in items])
+        image_vectors = backend.encode_images([item.image_path for item in items])
+        text_embeddings = {
+            item.item_id: vector for item, vector in zip(items, text_vectors, strict=True)
+        }
         image_embeddings = {
-            item.item_id: backend.encode_image(item.image_path) for item in items
+            item.item_id: vector for item, vector in zip(items, image_vectors, strict=True)
         }
         metadata = make_cache_metadata(
             items,

@@ -97,9 +97,9 @@ To enable the Hugging Face CLIP backend, install the optional extra:
 python -m pip install -e ".[dev,clip]"
 ```
 
-CLIP imports and model loading are lazy. Local model weights are required by default, so ordinary
-tests and commands never download a model. Pass `--allow-download` to a CLIP model command only
-when network-backed Hugging Face loading is intentional.
+CLIP imports and model loading are lazy, so ordinary tests and non-CLIP commands never download a
+model. Explicit CLIP model commands may retrieve weights from Hugging Face. Pass
+`--local-files-only` when network access must be forbidden.
 
 ```bash
 multimodal-retrieval-ops clip-backend-info
@@ -113,3 +113,18 @@ also accept `--device` (default `cpu`) and `--batch-size`. Generated indexes and
 remain ignored under `artifacts/clip/`. CLIP results depend on actual model weights, and retrieval
 over the tiny fixtures is an integration check—not a model-quality benchmark. No FAISS or
 fine-tuning is included yet.
+
+## Milestone 5.5: verified real-model smoke path
+
+After installing the CLIP extra, run the complete CPU smoke workflow with:
+
+```bash
+make clip-smoke
+```
+
+This loads `openai/clip-vit-base-patch32`, builds the index, searches for `"red car"`, evaluates
+held-out retrieval, and builds again to verify a cache hit. The verified local run used 512-element
+normalized embeddings for five fixture images. It evaluated two held-out queries and measured
+Recall@1/5/10 of `1.0000`, MRR `1.0000`, median rank `1.00`, and mean rank `1.00`. These figures only
+show that real neural text/image encoding and retrieval execute end to end on deliberately obvious
+tiny images; they are not a meaningful quality benchmark.

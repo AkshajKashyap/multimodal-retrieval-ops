@@ -1,4 +1,3 @@
-import json
 from pathlib import Path
 
 import pytest
@@ -9,6 +8,7 @@ from multimodal_retrieval_ops.clip_backend import (
     ClipBackendError,
     ClipEmbeddingBackend,
 )
+from multimodal_retrieval_ops.clip_reporting import render_clip_backend_report
 from multimodal_retrieval_ops.embedding_cache import (
     EmbeddingCache,
     cache_is_stale,
@@ -140,4 +140,16 @@ def test_clip_backend_info_cli_smoke(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stderr
     assert DEFAULT_CLIP_MODEL in result.stdout
     assert "CLIP Backend Report" in report.read_text(encoding="utf-8")
-    assert json.loads(Path("reports/clip_retrieval_metrics.json").read_text())["status"] == "not_run"
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        "successfully executed",
+        "unavailable dependencies",
+        "unavailable model weights",
+        "execution failure",
+    ],
+)
+def test_backend_report_distinguishes_execution_states(status: str) -> None:
+    assert f"**{status}**" in render_clip_backend_report(status)

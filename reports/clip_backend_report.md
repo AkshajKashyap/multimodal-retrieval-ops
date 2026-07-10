@@ -1,8 +1,14 @@
 # CLIP Backend Report
 
-Optional dependency status: **not installed**
+Execution status: **successfully executed**
 
-Default model: `openai/clip-vit-base-patch32`
+- Model: `openai/clip-vit-base-patch32`
+- Device: `cpu`
+- Embedding dimension: 512
+- Item count: 5
+- Cache: hit
+
+Detail: CLIP image index built successfully.
 
 The base installation does not require Torch, Transformers, Pillow, or model weights.
-CLIP model commands use locally cached weights unless `--allow-download` is provided.
+Explicit CLIP model commands may download weights; use `--local-files-only` to forbid it.
