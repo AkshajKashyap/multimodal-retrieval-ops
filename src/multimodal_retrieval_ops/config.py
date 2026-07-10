@@ -19,6 +19,9 @@ class ProjectConfig:
     baseline_vocab_path: Path = Path("artifacts/baseline/vocab.json")
     baseline_report_path: Path = Path("reports/baseline_retrieval_report.md")
     baseline_metrics_path: Path = Path("reports/baseline_retrieval_metrics.json")
+    multimodal_index_path: Path = Path("artifacts/baseline/multimodal_index.json")
+    multimodal_report_path: Path = Path("reports/multimodal_baseline_report.md")
+    multimodal_metrics_path: Path = Path("reports/multimodal_baseline_metrics.json")
 
 
 def load_config(path: Path | None = None) -> ProjectConfig:
@@ -52,5 +55,14 @@ def load_config(path: Path | None = None) -> ProjectConfig:
         ),
         baseline_metrics_path=Path(
             project.get("baseline_metrics_path", ProjectConfig.baseline_metrics_path)
+        ),
+        multimodal_index_path=Path(
+            project.get("multimodal_index_path", ProjectConfig.multimodal_index_path)
+        ),
+        multimodal_report_path=Path(
+            project.get("multimodal_report_path", ProjectConfig.multimodal_report_path)
+        ),
+        multimodal_metrics_path=Path(
+            project.get("multimodal_metrics_path", ProjectConfig.multimodal_metrics_path)
         ),
     )

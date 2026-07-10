@@ -64,3 +64,21 @@ multimodal-retrieval-ops evaluate-text-baseline
 The generated index and vocabulary live under `artifacts/baseline/` and remain ignored. The small,
 deterministic Markdown and JSON evaluation summaries are tracked under `reports/`. Reported metrics
 are Recall@1, Recall@5, Recall@10, MRR, median rank, mean rank, and query count.
+
+## Milestone 4: deterministic multimodal backend
+
+Milestone 4 introduces pluggable text/image encoder interfaces and a shared text-to-image index.
+The included backend is a deterministic placeholder—not CLIP and not a neural model. It hashes
+text tokens and lightweight local file/path tokens into the same fixed-size normalized space, then
+uses exact cosine search. This validates the multimodal architecture without downloads or model
+dependencies and must not be interpreted as a model-quality result.
+
+```bash
+multimodal-retrieval-ops build-multimodal-baseline-index
+multimodal-retrieval-ops search-multimodal-baseline --query "red car"
+multimodal-retrieval-ops evaluate-multimodal-baseline
+```
+
+The generated `artifacts/baseline/multimodal_index.json` stays ignored. Deterministic evaluation
+summaries are written to `reports/multimodal_baseline_report.md` and
+`reports/multimodal_baseline_metrics.json`.

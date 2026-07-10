@@ -30,7 +30,7 @@ def metrics_from_ranks(ranks: list[int]) -> RetrievalMetrics:
         recall_at_10=sum(rank <= 10 for rank in ranks) / count,
         mrr=sum(1.0 / rank for rank in ranks) / count,
         median_rank=float(statistics.median(ranks)),
-        mean_rank=statistics.mean(ranks),
+        mean_rank=float(statistics.mean(ranks)),
         query_count=count,
     )
 

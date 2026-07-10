@@ -9,6 +9,8 @@ from . import __version__
 from .baseline_index import build_index, exact_search, load_index, write_index
 from .config import load_config
 from .demo import generate_demo_manifest
+from .deterministic_image_encoder import DeterministicImageEncoder
+from .deterministic_text_encoder import DeterministicTextEncoder
 from .ingestion import ingest_local_directory
 from .inspection import inspect_items, write_dataset_report
 from .manifest import (
@@ -18,6 +20,14 @@ from .manifest import (
     validate_image_paths,
     write_manifest,
 )
+from .multimodal_evaluation import evaluate_multimodal_index
+from .multimodal_index import (
+    build_multimodal_index,
+    load_multimodal_index,
+    search_multimodal_index,
+    write_multimodal_index,
+)
+from .multimodal_reporting import write_multimodal_reports
 from .reporting import write_manifest_report
 from .evaluation import evaluate_index
 from .retrieval_reporting import write_retrieval_reports
@@ -68,6 +78,24 @@ def build_parser() -> argparse.ArgumentParser:
     evaluate.add_argument("--vocab", type=Path)
     evaluate.add_argument("--report-output", type=Path)
     evaluate.add_argument("--metrics-output", type=Path)
+    multimodal_build = subparsers.add_parser(
+        "build-multimodal-baseline-index", help="build the placeholder image embedding index"
+    )
+    multimodal_build.add_argument("--manifest", type=Path)
+    multimodal_build.add_argument("--output", type=Path)
+    multimodal_build.add_argument("--dimension", type=int, default=64)
+    multimodal_search = subparsers.add_parser(
+        "search-multimodal-baseline", help="search images with placeholder text embeddings"
+    )
+    multimodal_search.add_argument("--query", required=True)
+    multimodal_search.add_argument("--k", type=int, default=5)
+    multimodal_search.add_argument("--index", type=Path)
+    multimodal_evaluate = subparsers.add_parser(
+        "evaluate-multimodal-baseline", help="evaluate held-out text-to-image retrieval"
+    )
+    multimodal_evaluate.add_argument("--index", type=Path)
+    multimodal_evaluate.add_argument("--report-output", type=Path)
+    multimodal_evaluate.add_argument("--metrics-output", type=Path)
     return parser
 
 
@@ -77,7 +105,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "project-info":
             print(f"multimodal-retrieval-ops {__version__}")
-            print("Milestone: 3 (model-free baseline retrieval and evaluation)")
+            print("Milestone: 4 (embedding abstraction and deterministic multimodal baseline)")
             print("Runtime: CPU-only; standard library")
         elif args.command == "generate-demo-manifest":
             output = args.output or config.manifest_path
@@ -145,6 +173,38 @@ def main(argv: list[str] | None = None) -> int:
             write_retrieval_reports(metrics, report_output, metrics_output)
             print(
                 f"Evaluated {metrics.query_count} held-out queries; "
+                f"Recall@1={metrics.recall_at_1:.4f}, MRR={metrics.mrr:.4f}"
+            )
+        elif args.command == "build-multimodal-baseline-index":
+            manifest = args.manifest or config.dataset_manifest_path
+            output = args.output or config.multimodal_index_path
+            items = read_manifest(manifest)
+            text_encoder = DeterministicTextEncoder(dimension=args.dimension)
+            image_encoder = DeterministicImageEncoder(dimension=args.dimension)
+            index = build_multimodal_index(items, image_encoder, text_encoder)
+            write_multimodal_index(index, output)
+            print(
+                f"Built {index.dimension}-dimensional multimodal placeholder index with "
+                f"{len(index.entries)} items at {output}"
+            )
+        elif args.command == "search-multimodal-baseline":
+            index_path = args.index or config.multimodal_index_path
+            index = load_multimodal_index(index_path)
+            text_encoder = DeterministicTextEncoder(dimension=index.dimension)
+            results = search_multimodal_index(args.query, text_encoder, index, k=args.k)
+            print(json.dumps([asdict(result) for result in results], indent=2, sort_keys=True))
+        elif args.command == "evaluate-multimodal-baseline":
+            index_path = args.index or config.multimodal_index_path
+            report_output = args.report_output or config.multimodal_report_path
+            metrics_output = args.metrics_output or config.multimodal_metrics_path
+            index = load_multimodal_index(index_path)
+            text_encoder = DeterministicTextEncoder(dimension=index.dimension)
+            metrics, _ = evaluate_multimodal_index(text_encoder, index)
+            write_multimodal_reports(
+                metrics, index.backend_name, report_output, metrics_output
+            )
+            print(
+                f"Evaluated {metrics.query_count} held-out text-to-image queries; "
                 f"Recall@1={metrics.recall_at_1:.4f}, MRR={metrics.mrr:.4f}"
             )
     except (ManifestValidationError, ValueError) as error:
