@@ -49,6 +49,7 @@ def test_clip_backend_metadata_contract() -> None:
         "backend_name": "huggingface-clip",
         "backend_version": "1",
         "model_name": "local/model",
+        "model_revision": "default",
         "device": "cpu",
         "batch_size": 4,
         "dimension": 0,

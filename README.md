@@ -183,3 +183,54 @@ The benchmark compares the lexical, deterministic placeholder, and real zero-sho
 exact cosine search. The earlier five-image fixture metrics remain integration checks; they are
 distinct from a real Flickr8k benchmark. This repository had no local Flickr8k copy during
 Milestone 6 implementation, so the tracked real-benchmark report is explicitly `not_run`.
+
+## Milestone 6.5: Hugging Face Flickr8k bidirectional benchmark
+
+The real benchmark is opt-in and keeps the default install and `make check` download-free:
+
+```bash
+python -m pip install -e ".[dev,clip,hfdata]"
+multimodal-retrieval-ops ingest-hf-flickr8k --dataset-name jxie/flickr8k
+multimodal-retrieval-ops inspect-hf-flickr8k
+```
+
+Images are materialized under ignored `data/raw/hf_flickr8k/images/<split>/` directories with
+deterministic filenames and safe restart behavior. The source-provided train, validation, and test
+splits are preserved exactly; ingestion never resplits them.
+
+Run the 100-image official-test integration benchmark with:
+
+```bash
+multimodal-retrieval-ops evaluate-clip-flickr8k \
+  --split test --max-images 100 \
+  --model-name openai/clip-vit-base-patch32 --device cpu --batch-size 16
+# equivalent opt-in target
+make clip-flickr8k-smoke
+```
+
+Run all 1,000 official test images and 5,000 captions with:
+
+```bash
+multimodal-retrieval-ops evaluate-clip-flickr8k \
+  --split test --model-name openai/clip-vit-base-patch32 --device cpu --batch-size 16
+# equivalent opt-in target
+make clip-flickr8k-benchmark
+```
+
+Text-to-image uses each caption as a query against one candidate per image. Image-to-text uses each
+image as a query against all captions; all five captions belonging to that image are relevant, and
+the rank is the highest-ranked relevant caption. Both directions use vectorized exact cosine
+similarity.
+
+The measured CPU run with `openai/clip-vit-base-patch32` produced:
+
+| Mode and direction | R@1 | R@5 | R@10 | MRR | Median rank | Mean rank |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 100-image integration, text to image | 0.8060 | 0.9780 | 0.9920 | 0.8811 | 1.00 | 1.45 |
+| 100-image integration, image to text | 0.9300 | 1.0000 | 1.0000 | 0.9583 | 1.00 | 1.12 |
+| Full test, text to image | 0.5538 | 0.8160 | 0.8910 | 0.6712 | 1.00 | 5.19 |
+| Full test, image to text | 0.7170 | 0.9170 | 0.9560 | 0.8031 | 1.00 | 2.50 |
+
+Dataset source: `jxie/flickr8k`. Its licensing information is not clearly exposed by the source,
+so licensing status remains **unresolved**. Downloaded images and Hugging Face caches must not be
+redistributed or committed through this repository.

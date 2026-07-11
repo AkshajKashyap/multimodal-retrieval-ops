@@ -1,0 +1,38 @@
+{
+  "batch_size": 16,
+  "cache_hit": true,
+  "caption_count": 500,
+  "dataset_fingerprint": "f0e3df07c059a4d5516a2f7e9549240844724656ac3217429f65a44f747327ec",
+  "dataset_name": "jxie/flickr8k",
+  "dataset_revision": "default",
+  "device": "cpu",
+  "embedding_dimension": 512,
+  "image_to_text": {
+    "candidate_count": 500,
+    "mean_rank": 1.12,
+    "median_rank": 1.0,
+    "mrr": 0.9583333333333333,
+    "query_count": 100,
+    "recall_at_1": 0.93,
+    "recall_at_10": 1.0,
+    "recall_at_5": 1.0
+  },
+  "manifest_fingerprint": "fc661acaff9522129b263fe95b50d29e12558035028cc4d6d042a0cf2a45c304",
+  "mode": "integration_subset",
+  "model_name": "openai/clip-vit-base-patch32",
+  "model_revision": "default",
+  "resolved_dataset_revision": "56f58c967835f7c508d684f36bd7897cca9d7634",
+  "run_state": "success",
+  "split": "test",
+  "text_to_image": {
+    "candidate_count": 100,
+    "mean_rank": 1.45,
+    "median_rank": 1.0,
+    "mrr": 0.8810739038739038,
+    "query_count": 500,
+    "recall_at_1": 0.806,
+    "recall_at_10": 0.992,
+    "recall_at_5": 0.978
+  },
+  "unique_image_count": 100
+}

@@ -33,6 +33,17 @@ from .flickr8k import (
     multi_caption_statistics,
     render_flickr8k_report,
 )
+from .hf_clip_benchmark import run_hf_clip_benchmark, write_hf_clip_failure
+from .hf_flickr8k import (
+    DEFAULT_HF_FLICKR8K_DATASET,
+    HFDataExecutionError,
+    HFDatasetUnavailableError,
+    HFFlickr8kError,
+    ingest_hf_flickr8k,
+    load_hf_provenance,
+    render_hf_dataset_report,
+    write_hf_failure_report,
+)
 from .ingestion import ingest_local_directory
 from .inspection import inspect_items, write_dataset_report
 from .manifest import (
@@ -182,6 +193,35 @@ def build_parser() -> argparse.ArgumentParser:
     clip_benchmark.add_argument("--device", default="cpu")
     clip_benchmark.add_argument("--batch-size", type=int, default=16)
     clip_benchmark.add_argument("--local-files-only", action="store_true")
+    hf_ingest = subparsers.add_parser(
+        "ingest-hf-flickr8k", help="materialize opt-in Hugging Face Flickr8k"
+    )
+    hf_ingest.add_argument("--dataset-name", default=DEFAULT_HF_FLICKR8K_DATASET)
+    hf_ingest.add_argument("--revision")
+    hf_ingest.add_argument("--cache-dir", type=Path)
+    hf_ingest.add_argument("--output-manifest", type=Path)
+    hf_ingest.add_argument("--images-dir", type=Path)
+    hf_ingest.add_argument("--max-images-per-split", type=int)
+    hf_ingest.add_argument("--local-files-only", action="store_true")
+    hf_ingest.add_argument("--force", action="store_true")
+    hf_inspect = subparsers.add_parser(
+        "inspect-hf-flickr8k", help="inspect materialized Hugging Face Flickr8k"
+    )
+    hf_inspect.add_argument("--provenance", type=Path)
+    hf_inspect.add_argument("--output", type=Path)
+    hf_evaluate = subparsers.add_parser(
+        "evaluate-clip-flickr8k", help="run bidirectional exact CLIP evaluation"
+    )
+    hf_evaluate.add_argument("--manifest", type=Path)
+    hf_evaluate.add_argument("--provenance", type=Path)
+    hf_evaluate.add_argument("--split", default="test")
+    hf_evaluate.add_argument("--max-images", type=int)
+    hf_evaluate.add_argument("--seed", type=int, default=42)
+    hf_evaluate.add_argument("--model-name", default=DEFAULT_CLIP_MODEL)
+    hf_evaluate.add_argument("--model-revision")
+    hf_evaluate.add_argument("--device", default="cpu")
+    hf_evaluate.add_argument("--batch-size", type=int, default=16)
+    hf_evaluate.add_argument("--local-files-only", action="store_true")
     return parser
 
 
@@ -191,7 +231,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "project-info":
             print(f"multimodal-retrieval-ops {__version__}")
-            print("Milestone: 6 (multi-caption schema and Flickr8k benchmark protocol)")
+            print("Milestone: 6.5 (HF Flickr8k and bidirectional zero-shot CLIP)")
             print("Runtime: lightweight base install; optional CPU/GPU CLIP extra")
         elif args.command == "generate-demo-manifest":
             output = args.output or config.manifest_path
@@ -484,6 +524,93 @@ def main(argv: list[str] | None = None) -> int:
                 f"Recall@1={metrics.recall_at_1:.4f}; "
                 f"cache={'hit' if cache_hit else 'miss'}"
             )
+        elif args.command == "ingest-hf-flickr8k":
+            output_manifest = args.output_manifest or config.hf_flickr8k_manifest_path
+            images_dir = args.images_dir or config.hf_flickr8k_images_path
+            rows, provenance = ingest_hf_flickr8k(
+                dataset_name=args.dataset_name,
+                revision=args.revision,
+                cache_dir=args.cache_dir,
+                output_manifest=output_manifest,
+                images_dir=images_dir,
+                provenance_path=config.hf_flickr8k_provenance_path,
+                max_images_per_split=args.max_images_per_split,
+                local_files_only=args.local_files_only,
+                force=args.force,
+            )
+            config.hf_flickr8k_report_path.parent.mkdir(parents=True, exist_ok=True)
+            config.hf_flickr8k_report_path.write_text(
+                render_hf_dataset_report(provenance), encoding="utf-8"
+            )
+            print(
+                f"Materialized {provenance.unique_image_count} images and "
+                f"{len(rows)} captions to {output_manifest}"
+            )
+        elif args.command == "inspect-hf-flickr8k":
+            provenance_path = args.provenance or config.hf_flickr8k_provenance_path
+            output = args.output or config.hf_flickr8k_report_path
+            provenance = load_hf_provenance(provenance_path)
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_text(render_hf_dataset_report(provenance), encoding="utf-8")
+            print(
+                f"HF Flickr8k: {provenance.unique_image_count} images, "
+                f"{provenance.caption_count} captions; report={output}"
+            )
+        elif args.command == "evaluate-clip-flickr8k":
+            manifest = args.manifest or config.hf_flickr8k_manifest_path
+            provenance_path = args.provenance or config.hf_flickr8k_provenance_path
+            raw_rows = read_manifest(manifest)
+            rows = [row for row in raw_rows if isinstance(row, ManifestItemV2)]
+            if len(rows) != len(raw_rows):
+                raise ValueError("HF Flickr8k evaluation requires a schema-v2 manifest")
+            provenance = load_hf_provenance(provenance_path)
+            integration = args.max_images is not None
+            cache_path = (
+                config.hf_integration_cache_path if integration else config.hf_test_cache_path
+            )
+            index_path = (
+                config.hf_integration_index_path if integration else config.hf_test_index_path
+            )
+            report_path = (
+                config.hf_integration_report_path if integration else config.hf_test_report_path
+            )
+            metrics_path = (
+                config.hf_integration_metrics_path if integration else config.hf_test_metrics_path
+            )
+            backend = ClipEmbeddingBackend(
+                model_name=args.model_name,
+                model_revision=args.model_revision,
+                device=args.device,
+                batch_size=args.batch_size,
+                allow_download=not args.local_files_only,
+            )
+            result, cache_hit = run_hf_clip_benchmark(
+                rows,
+                provenance,
+                backend,
+                split=args.split,
+                max_images=args.max_images,
+                seed=args.seed,
+                cache_path=cache_path,
+                index_path=index_path,
+                report_path=report_path,
+                metrics_path=metrics_path,
+            )
+            print(
+                f"HF Flickr8k {args.split}: "
+                f"T2I R@1={result.text_to_image.metrics.recall_at_1:.4f}, "
+                f"I2T R@1={result.image_to_text.metrics.recall_at_1:.4f}; "
+                f"cache={'hit' if cache_hit else 'miss'}"
+            )
+    except HFFlickr8kError as error:
+        if isinstance(error, HFDatasetUnavailableError):
+            state = "dataset_unavailable"
+        elif isinstance(error, HFDataExecutionError):
+            state = "execution_failed"
+        else:
+            state = "dependency_unavailable"
+        write_hf_failure_report(config.hf_flickr8k_report_path, state, str(error))
+        build_parser().error(str(error))
     except ClipBackendError as error:
         if isinstance(error, ClipModelUnavailableError):
             status = "unavailable model weights"
@@ -504,6 +631,20 @@ def main(argv: list[str] | None = None) -> int:
                 str(error),
                 getattr(args, "report_output", None) or config.clip_report_path,
                 getattr(args, "metrics_output", None) or config.clip_metrics_path,
+            )
+        elif args.command == "evaluate-clip-flickr8k":
+            integration = getattr(args, "max_images", None) is not None
+            if isinstance(error, ClipModelUnavailableError):
+                hf_state = "model_unavailable"
+            elif isinstance(error, ClipExecutionError):
+                hf_state = "execution_failed"
+            else:
+                hf_state = "dependency_unavailable"
+            write_hf_clip_failure(
+                config.hf_integration_report_path if integration else config.hf_test_report_path,
+                config.hf_integration_metrics_path if integration else config.hf_test_metrics_path,
+                hf_state,
+                str(error),
             )
         build_parser().error(str(error))
     except (ManifestValidationError, ValueError) as error:

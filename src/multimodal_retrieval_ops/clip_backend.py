@@ -38,6 +38,7 @@ class ClipEmbeddingBackend:
     """Lazily loaded, normalized Hugging Face CLIP text/image encoder."""
 
     model_name: str = DEFAULT_CLIP_MODEL
+    model_revision: str | None = None
     device: str = "cpu"
     batch_size: int = 8
     allow_download: bool = False
@@ -55,6 +56,7 @@ class ClipEmbeddingBackend:
             "backend_name": self.backend_name,
             "backend_version": self.backend_version,
             "model_name": self.model_name,
+            "model_revision": self.model_revision or "default",
             "device": self.device,
             "batch_size": self.batch_size,
             "dimension": self.dimension,
@@ -76,10 +78,14 @@ class ClipEmbeddingBackend:
             raise ClipBackendError(clip_dependency_message()) from error
         try:
             processor = CLIPProcessor.from_pretrained(
-                self.model_name, local_files_only=not self.allow_download
+                self.model_name,
+                revision=self.model_revision,
+                local_files_only=not self.allow_download,
             )
             model = CLIPModel.from_pretrained(
-                self.model_name, local_files_only=not self.allow_download
+                self.model_name,
+                revision=self.model_revision,
+                local_files_only=not self.allow_download,
             )
         except Exception as error:
             download_hint = " Retry without --local-files-only." if not self.allow_download else ""
@@ -111,14 +117,17 @@ class ClipEmbeddingBackend:
         """Encode text in configured batches."""
         self.ensure_loaded()
         embeddings: list[list[float]] = []
-        for start in range(0, len(texts), self.batch_size):
-            batch = texts[start : start + self.batch_size]
-            inputs = self._processor(text=batch, return_tensors="pt", padding=True)
-            inputs = {name: value.to(self.device) for name, value in inputs.items()}
-            with self._torch.inference_mode():
-                output = self._model.text_model(**inputs)
-                features = self._model.text_projection(output.pooler_output)
-            embeddings.extend(self._normalize_batch(features))
+        try:
+            for start in range(0, len(texts), self.batch_size):
+                batch = texts[start : start + self.batch_size]
+                inputs = self._processor(text=batch, return_tensors="pt", padding=True)
+                inputs = {name: value.to(self.device) for name, value in inputs.items()}
+                with self._torch.inference_mode():
+                    output = self._model.text_model(**inputs)
+                    features = self._model.text_projection(output.pooler_output)
+                embeddings.extend(self._normalize_batch(features))
+        except Exception as error:
+            raise ClipExecutionError("CLIP text embedding execution failed") from error
         return embeddings
 
     def encode_text(self, text: str) -> list[float]:
@@ -140,12 +149,15 @@ class ClipEmbeddingBackend:
                         images.append(image.convert("RGB").copy())
                 except Exception as error:
                     raise ClipExecutionError(f"could not decode image: {image_path}") from error
-            inputs = self._processor(images=images, return_tensors="pt")
-            inputs = {name: value.to(self.device) for name, value in inputs.items()}
-            with self._torch.inference_mode():
-                output = self._model.vision_model(**inputs)
-                features = self._model.visual_projection(output.pooler_output)
-            embeddings.extend(self._normalize_batch(features))
+            try:
+                inputs = self._processor(images=images, return_tensors="pt")
+                inputs = {name: value.to(self.device) for name, value in inputs.items()}
+                with self._torch.inference_mode():
+                    output = self._model.vision_model(**inputs)
+                    features = self._model.visual_projection(output.pooler_output)
+                embeddings.extend(self._normalize_batch(features))
+            except Exception as error:
+                raise ClipExecutionError("CLIP image embedding execution failed") from error
         return embeddings
 
     def encode_image(self, image_path: str) -> list[float]:

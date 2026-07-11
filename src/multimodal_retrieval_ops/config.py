@@ -36,6 +36,18 @@ class ProjectConfig:
     clip_benchmark_cache_path: Path = Path("artifacts/clip/flickr8k_cache.json")
     clip_benchmark_report_path: Path = Path("reports/clip_real_benchmark_report.md")
     clip_benchmark_metrics_path: Path = Path("reports/clip_real_benchmark_metrics.json")
+    hf_flickr8k_manifest_path: Path = Path("data/processed/hf_flickr8k_manifest_v2.csv")
+    hf_flickr8k_images_path: Path = Path("data/raw/hf_flickr8k/images")
+    hf_flickr8k_provenance_path: Path = Path("data/processed/hf_flickr8k_provenance.json")
+    hf_flickr8k_report_path: Path = Path("reports/hf_flickr8k_dataset_report.md")
+    hf_integration_cache_path: Path = Path("artifacts/clip/hf_flickr8k_integration_cache.json")
+    hf_integration_index_path: Path = Path("artifacts/clip/hf_flickr8k_integration_index.json")
+    hf_integration_report_path: Path = Path("reports/clip_flickr8k_integration_report.md")
+    hf_integration_metrics_path: Path = Path("reports/clip_flickr8k_integration_metrics.json")
+    hf_test_cache_path: Path = Path("artifacts/clip/hf_flickr8k_test_cache.json")
+    hf_test_index_path: Path = Path("artifacts/clip/hf_flickr8k_test_index.json")
+    hf_test_report_path: Path = Path("reports/clip_flickr8k_test_report.md")
+    hf_test_metrics_path: Path = Path("reports/clip_flickr8k_test_metrics.json")
 
 
 def load_config(path: Path | None = None) -> ProjectConfig:
@@ -112,5 +124,41 @@ def load_config(path: Path | None = None) -> ProjectConfig:
         ),
         clip_benchmark_metrics_path=Path(
             project.get("clip_benchmark_metrics_path", ProjectConfig.clip_benchmark_metrics_path)
+        ),
+        hf_flickr8k_manifest_path=Path(
+            project.get("hf_flickr8k_manifest_path", ProjectConfig.hf_flickr8k_manifest_path)
+        ),
+        hf_flickr8k_images_path=Path(
+            project.get("hf_flickr8k_images_path", ProjectConfig.hf_flickr8k_images_path)
+        ),
+        hf_flickr8k_provenance_path=Path(
+            project.get("hf_flickr8k_provenance_path", ProjectConfig.hf_flickr8k_provenance_path)
+        ),
+        hf_flickr8k_report_path=Path(
+            project.get("hf_flickr8k_report_path", ProjectConfig.hf_flickr8k_report_path)
+        ),
+        hf_integration_cache_path=Path(
+            project.get("hf_integration_cache_path", ProjectConfig.hf_integration_cache_path)
+        ),
+        hf_integration_index_path=Path(
+            project.get("hf_integration_index_path", ProjectConfig.hf_integration_index_path)
+        ),
+        hf_integration_report_path=Path(
+            project.get("hf_integration_report_path", ProjectConfig.hf_integration_report_path)
+        ),
+        hf_integration_metrics_path=Path(
+            project.get("hf_integration_metrics_path", ProjectConfig.hf_integration_metrics_path)
+        ),
+        hf_test_cache_path=Path(
+            project.get("hf_test_cache_path", ProjectConfig.hf_test_cache_path)
+        ),
+        hf_test_index_path=Path(
+            project.get("hf_test_index_path", ProjectConfig.hf_test_index_path)
+        ),
+        hf_test_report_path=Path(
+            project.get("hf_test_report_path", ProjectConfig.hf_test_report_path)
+        ),
+        hf_test_metrics_path=Path(
+            project.get("hf_test_metrics_path", ProjectConfig.hf_test_metrics_path)
         ),
     )
