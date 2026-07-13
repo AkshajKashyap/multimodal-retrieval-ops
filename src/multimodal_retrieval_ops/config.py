@@ -60,6 +60,22 @@ class ProjectConfig:
     text_inference_service_metrics_path: Path = Path("reports/text_inference_service_metrics.json")
     image_inference_service_report_path: Path = Path("reports/image_inference_service_report.md")
     image_inference_service_metrics_path: Path = Path("reports/image_inference_service_metrics.json")
+    adapter_artifacts_path: Path = Path("artifacts/contrastive_adapters")
+    adapter_train_cache_path: Path = Path(
+        "artifacts/contrastive_adapters/train_embeddings.json"
+    )
+    adapter_validation_cache_path: Path = Path(
+        "artifacts/contrastive_adapters/validation_embeddings.json"
+    )
+    adapter_checkpoint_path: Path = Path("artifacts/contrastive_adapters/adapters.pt")
+    adapter_checkpoint_metadata_path: Path = Path(
+        "artifacts/contrastive_adapters/adapters.json"
+    )
+    adapter_training_report_path: Path = Path(
+        "reports/contrastive_adapter_training_report.md"
+    )
+    adapter_metrics_path: Path = Path("reports/contrastive_adapter_metrics.json")
+    adapter_promotion_path: Path = Path("reports/contrastive_adapter_promotion.md")
 
 
 def load_config(path: Path | None = None) -> ProjectConfig:
@@ -224,5 +240,37 @@ def load_config(path: Path | None = None) -> ProjectConfig:
                 "image_inference_service_metrics_path",
                 ProjectConfig.image_inference_service_metrics_path,
             )
+        ),
+        adapter_artifacts_path=Path(
+            project.get("adapter_artifacts_path", ProjectConfig.adapter_artifacts_path)
+        ),
+        adapter_train_cache_path=Path(
+            project.get("adapter_train_cache_path", ProjectConfig.adapter_train_cache_path)
+        ),
+        adapter_validation_cache_path=Path(
+            project.get(
+                "adapter_validation_cache_path",
+                ProjectConfig.adapter_validation_cache_path,
+            )
+        ),
+        adapter_checkpoint_path=Path(
+            project.get("adapter_checkpoint_path", ProjectConfig.adapter_checkpoint_path)
+        ),
+        adapter_checkpoint_metadata_path=Path(
+            project.get(
+                "adapter_checkpoint_metadata_path",
+                ProjectConfig.adapter_checkpoint_metadata_path,
+            )
+        ),
+        adapter_training_report_path=Path(
+            project.get(
+                "adapter_training_report_path", ProjectConfig.adapter_training_report_path
+            )
+        ),
+        adapter_metrics_path=Path(
+            project.get("adapter_metrics_path", ProjectConfig.adapter_metrics_path)
+        ),
+        adapter_promotion_path=Path(
+            project.get("adapter_promotion_path", ProjectConfig.adapter_promotion_path)
         ),
     )

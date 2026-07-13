@@ -25,6 +25,25 @@ from .clip_reporting import (
 )
 from .clip_workflow import build_clip_index
 from .config import load_config
+from .contrastive_adapters import (
+    AdapterCacheIncompatibleError,
+    AdapterDatasetUnavailableError,
+    AdapterDependencyError,
+    AdapterEvaluationError,
+    AdapterTrainingConfig,
+    AdapterTrainingError,
+    ContrastiveAdapterError,
+    evaluate_adapters,
+    load_adapter_cache,
+    prepare_adapter_cache,
+    train_adapters,
+    training_dependencies_available,
+    training_dependency_message,
+)
+from .contrastive_adapter_reporting import (
+    write_adapter_failure_reports,
+    write_adapter_reports,
+)
 from .demo import generate_demo_manifest
 from .deterministic_image_encoder import DeterministicImageEncoder
 from .deterministic_text_encoder import DeterministicTextEncoder
@@ -347,6 +366,63 @@ def build_parser() -> argparse.ArgumentParser:
         if command == "search-live-image":
             service.add_argument("--image-path", required=True)
             service.add_argument("--top-k", type=int, default=5)
+    adapter_prepare = subparsers.add_parser(
+        "prepare-adapter-embeddings",
+        help="cache bounded frozen train and validation CLIP embeddings",
+    )
+    adapter_prepare.add_argument("--manifest", type=Path)
+    adapter_prepare.add_argument("--provenance", type=Path)
+    adapter_prepare.add_argument("--train-cache", type=Path)
+    adapter_prepare.add_argument("--validation-cache", type=Path)
+    adapter_prepare.add_argument("--train-images", type=int, default=500)
+    adapter_prepare.add_argument("--validation-images", type=int, default=100)
+    adapter_prepare.add_argument("--seed", type=int, default=42)
+    adapter_prepare.add_argument("--model-name", default=DEFAULT_CLIP_MODEL)
+    adapter_prepare.add_argument("--model-revision")
+    adapter_prepare.add_argument("--device", default="cpu")
+    adapter_prepare.add_argument(
+        "--local-files-only", action=argparse.BooleanOptionalAction, default=True
+    )
+    adapter_train = subparsers.add_parser(
+        "train-contrastive-adapters",
+        help="train one fixed residual-adapter configuration over frozen embeddings",
+    )
+    adapter_train.add_argument("--train-cache", type=Path)
+    adapter_train.add_argument("--validation-cache", type=Path)
+    adapter_train.add_argument("--checkpoint", type=Path)
+    adapter_train.add_argument("--metadata-output", type=Path)
+    adapter_train.add_argument("--seed", type=int, default=42)
+    adapter_train.add_argument("--device", default="cpu")
+    adapter_train.add_argument("--max-epochs", type=int, default=20)
+    adapter_train.add_argument("--early-stopping-patience", type=int, default=4)
+    adapter_train.add_argument("--batch-size", type=int, default=64)
+    adapter_evaluate = subparsers.add_parser(
+        "evaluate-contrastive-adapters",
+        help="compare zero-shot and adapted retrieval on validation only",
+    )
+    adapter_evaluate.add_argument("--train-cache", type=Path)
+    adapter_evaluate.add_argument("--validation-cache", type=Path)
+    adapter_evaluate.add_argument("--checkpoint", type=Path)
+    adapter_evaluate.add_argument("--metadata", type=Path)
+    adapter_evaluate.add_argument("--device", default="cpu")
+    adapter_evaluate.add_argument("--report-output", type=Path)
+    adapter_evaluate.add_argument("--metrics-output", type=Path)
+    adapter_evaluate.add_argument("--promotion-output", type=Path)
+    adapter_info = subparsers.add_parser(
+        "contrastive-adapter-info",
+        help="inspect optional training support and generated adapter artifacts",
+    )
+    adapter_info.add_argument("--train-cache", type=Path)
+    adapter_info.add_argument("--validation-cache", type=Path)
+    adapter_info.add_argument("--checkpoint", type=Path)
+    adapter_info.add_argument("--metadata", type=Path)
+    adapter_info.add_argument("--model-name", default=DEFAULT_CLIP_MODEL)
+    adapter_info.add_argument("--model-revision")
+    adapter_info.add_argument("--device", default="cpu")
+    adapter_info.add_argument("--seed", type=int, default=42)
+    adapter_info.add_argument(
+        "--local-files-only", action=argparse.BooleanOptionalAction, default=True
+    )
     return parser
 
 
@@ -361,7 +437,7 @@ def main(
     try:
         if args.command == "project-info":
             print(f"multimodal-retrieval-ops {__version__}")
-            print("Milestone: 8B (bounded arbitrary-image retrieval inference)")
+            print("Milestone: 9A (bounded frozen-embedding contrastive adapters)")
             print("Runtime: lightweight base install; optional CPU/GPU CLIP extra")
         elif args.command == "generate-demo-manifest":
             output = args.output or config.manifest_path
@@ -732,6 +808,126 @@ def main(
                 f"I2T R@1={result.image_to_text.metrics.recall_at_1:.4f}; "
                 f"cache={'hit' if cache_hit else 'miss'}"
             )
+        elif args.command == "prepare-adapter-embeddings":
+            manifest_path = args.manifest or config.hf_flickr8k_manifest_path
+            provenance_path = args.provenance or config.hf_flickr8k_provenance_path
+            train_cache_path = args.train_cache or config.adapter_train_cache_path
+            validation_cache_path = (
+                args.validation_cache or config.adapter_validation_cache_path
+            )
+            rows = read_manifest(manifest_path)
+            if not all(isinstance(row, ManifestItemV2) for row in rows):
+                raise ManifestValidationError(
+                    "adapter preparation requires a schema-v2 Flickr8k manifest"
+                )
+            provenance = load_hf_provenance(provenance_path)
+            backend = ClipEmbeddingBackend(
+                model_name=args.model_name,
+                model_revision=args.model_revision,
+                device=args.device,
+                batch_size=64,
+                allow_download=not args.local_files_only,
+            )
+            train_cache, train_hit = prepare_adapter_cache(
+                rows,
+                backend,
+                provenance,
+                split="train",
+                image_count=args.train_images,
+                seed=args.seed,
+                cache_path=train_cache_path,
+            )
+            validation_cache, validation_hit = prepare_adapter_cache(
+                rows,
+                backend,
+                provenance,
+                split="validation",
+                image_count=args.validation_images,
+                seed=args.seed,
+                cache_path=validation_cache_path,
+            )
+            print(
+                "Prepared frozen adapter embeddings: "
+                f"train={train_cache.metadata.image_count} images/"
+                f"{train_cache.metadata.caption_count} captions "
+                f"({'hit' if train_hit else 'created'}), "
+                f"validation={validation_cache.metadata.image_count} images/"
+                f"{validation_cache.metadata.caption_count} captions "
+                f"({'hit' if validation_hit else 'created'})"
+            )
+        elif args.command == "train-contrastive-adapters":
+            result = train_adapters(
+                args.train_cache or config.adapter_train_cache_path,
+                args.validation_cache or config.adapter_validation_cache_path,
+                args.checkpoint or config.adapter_checkpoint_path,
+                args.metadata_output or config.adapter_checkpoint_metadata_path,
+                AdapterTrainingConfig(
+                    seed=args.seed,
+                    max_epochs=args.max_epochs,
+                    early_stopping_patience=args.early_stopping_patience,
+                    batch_size=args.batch_size,
+                    device=args.device,
+                ),
+            )
+            print(
+                f"Trained {len(result.history)} epochs; selected epoch "
+                f"{result.selected_epoch}; early-stopped={str(result.early_stopped).lower()}; "
+                f"parameters={result.parameter_count}"
+            )
+        elif args.command == "evaluate-contrastive-adapters":
+            train_cache_path = args.train_cache or config.adapter_train_cache_path
+            validation_cache_path = (
+                args.validation_cache or config.adapter_validation_cache_path
+            )
+            comparison, metadata = evaluate_adapters(
+                train_cache_path,
+                validation_cache_path,
+                args.checkpoint or config.adapter_checkpoint_path,
+                args.metadata or config.adapter_checkpoint_metadata_path,
+                args.device,
+            )
+            train_cache = load_adapter_cache(train_cache_path)
+            validation_cache = load_adapter_cache(validation_cache_path)
+            write_adapter_reports(
+                comparison,
+                metadata,
+                train_cache,
+                validation_cache,
+                args.report_output or config.adapter_training_report_path,
+                args.metrics_output or config.adapter_metrics_path,
+                args.promotion_output or config.adapter_promotion_path,
+            )
+            print(
+                "Adapter validation complete: "
+                f"mean-MRR-difference="
+                f"{comparison.promotion.mean_bidirectional_mrr_difference:+.6f}; "
+                f"decision={'promote' if comparison.promotion.promote else 'retain-zero-shot'}"
+            )
+        elif args.command == "contrastive-adapter-info":
+            paths = {
+                "checkpoint": args.checkpoint or config.adapter_checkpoint_path,
+                "metadata": args.metadata or config.adapter_checkpoint_metadata_path,
+                "train_cache": args.train_cache or config.adapter_train_cache_path,
+                "validation_cache": (
+                    args.validation_cache or config.adapter_validation_cache_path
+                ),
+            }
+            information = {
+                "torch_available": training_dependencies_available(),
+                "dependency_message": (
+                    "available"
+                    if training_dependencies_available()
+                    else training_dependency_message()
+                ),
+                "model_name": args.model_name,
+                "model_revision": args.model_revision or "default",
+                "device": args.device,
+                "seed": args.seed,
+                "local_files_only": args.local_files_only,
+                "artifacts": {name: path.is_file() for name, path in paths.items()},
+                "official_test_accessed": False,
+            }
+            print(json.dumps(information, indent=2, sort_keys=True))
         elif args.command == "faiss-backend-info":
             available = faiss_available()
             message = f"FAISS CPU backend: {'available' if available else 'not installed'}"
@@ -1074,6 +1270,31 @@ def main(
                             f"Retrieval service smoke passed for {result.backend}; "
                             "caption-to-image=1, image-to-caption=1"
                         )
+    except ContrastiveAdapterError as error:
+        if isinstance(error, AdapterDependencyError):
+            state = "dependency_unavailable"
+        elif isinstance(error, AdapterDatasetUnavailableError):
+            state = "dataset_unavailable"
+        elif isinstance(error, AdapterCacheIncompatibleError):
+            state = "cache_incompatible"
+        elif isinstance(error, AdapterTrainingError):
+            state = "training_failed"
+        elif isinstance(error, AdapterEvaluationError):
+            state = "evaluation_failed"
+        else:
+            state = (
+                "evaluation_failed"
+                if args.command == "evaluate-contrastive-adapters"
+                else "training_failed"
+            )
+        write_adapter_failure_reports(
+            state,
+            str(error),
+            config.adapter_training_report_path,
+            config.adapter_metrics_path,
+            config.adapter_promotion_path,
+        )
+        build_parser().error(str(error))
     except FaissFlatError as error:
         if isinstance(error, FaissDependencyError):
             state = "dependency_unavailable"
@@ -1116,6 +1337,20 @@ def main(
             device=getattr(args, "device", "cpu"),
             detail=str(error),
         )
+        if args.command == "prepare-adapter-embeddings":
+            if isinstance(error, ClipModelUnavailableError):
+                adapter_state = "model_unavailable"
+            elif isinstance(error, ClipExecutionError):
+                adapter_state = "training_failed"
+            else:
+                adapter_state = "dependency_unavailable"
+            write_adapter_failure_reports(
+                adapter_state,
+                str(error),
+                config.adapter_training_report_path,
+                config.adapter_metrics_path,
+                config.adapter_promotion_path,
+            )
         if args.command == "evaluate-clip":
             write_clip_failure_reports(
                 status,

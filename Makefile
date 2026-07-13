@@ -75,3 +75,15 @@ image-inference-smoke-flat:
 
 image-inference-smoke-hnsw:
 	multimodal-retrieval-ops retrieval-service-smoke --backend hnsw --ef-search 64 --enable-image-inference --local-files-only
+
+contrastive-adapter-check:
+	pytest -q tests/test_milestone_nine_a.py
+
+contrastive-adapter-prepare:
+	multimodal-retrieval-ops prepare-adapter-embeddings --train-images 500 --validation-images 100 --seed 42 --model-name openai/clip-vit-base-patch32 --device cpu --local-files-only
+
+contrastive-adapter-train:
+	multimodal-retrieval-ops train-contrastive-adapters --seed 42 --device cpu --max-epochs 20 --early-stopping-patience 4 --batch-size 64
+
+contrastive-adapter-eval:
+	multimodal-retrieval-ops evaluate-contrastive-adapters --device cpu

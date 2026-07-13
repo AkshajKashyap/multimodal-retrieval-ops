@@ -10,6 +10,7 @@ multimodal-retrieval-ops = "multimodal_retrieval_ops.cli:main"
 
 [project.optional-dependencies]
 dev = ["pytest", "ruff"]
+train = ["torch>=2.2"]
 clip = ["Pillow>=10", "torch>=2.2", "transformers>=4.40"]
 hfdata = ["datasets>=3.0", "Pillow>=10"]
 faiss = ["faiss-cpu>=1.8"]

@@ -139,8 +139,9 @@ class ClipEmbeddingBackend:
         """Decode and encode images in configured batches."""
         self.ensure_loaded()
         embeddings: list[list[float]] = []
-        for start in range(0, len(image_paths), self.batch_size):
-            batch_paths = image_paths[start : start + self.batch_size]
+        image_batch_size = min(self.batch_size, 4)
+        for start in range(0, len(image_paths), image_batch_size):
+            batch_paths = image_paths[start : start + image_batch_size]
             images = []
             for image_path in batch_paths:
                 path = Path(image_path)

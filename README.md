@@ -448,3 +448,56 @@ coexist. Optional HNSW caption search uses `--backend hnsw --ef-search 64`; Flat
 default. CPU model startup and vision inference may be slow and memory-intensive. Caches and
 metrics are process-local. Fine-tuning, training, reranking, OCR, and image persistence remain
 deferred.
+
+## Milestone 9A: bounded frozen-embedding contrastive adapters
+
+Milestone 9A is one controlled learning experiment, not full CLIP fine-tuning. It selects at most
+500 official training images and 100 separate official validation images, preserving all five
+captions for every selected image. Selection is deterministic by image group with seed `42`. The
+official test split is rejected by the adapter protocol and remains untouched for a later
+milestone.
+
+Install the optional training dependency and, for real frozen-embedding preparation, the existing
+CLIP extra:
+
+```bash
+python -m pip install -e ".[dev,train]"
+python -m pip install -e ".[dev,clip,train]"
+```
+
+Preparation uses only materialized Flickr8k files and locally cached
+`openai/clip-vit-base-patch32` weights. It creates each compatible train or validation cache once
+and reuses it thereafter:
+
+```bash
+multimodal-retrieval-ops prepare-adapter-embeddings \
+  --train-images 500 --validation-images 100 --seed 42 \
+  --model-name openai/clip-vit-base-patch32 --device cpu --local-files-only
+multimodal-retrieval-ops train-contrastive-adapters \
+  --seed 42 --device cpu --max-epochs 20 \
+  --early-stopping-patience 4 --batch-size 64
+multimodal-retrieval-ops evaluate-contrastive-adapters --device cpu
+multimodal-retrieval-ops contrastive-adapter-info
+```
+
+The single architecture uses separate text and image adapters:
+`normalize(input + W2(GELU(W1(input))))`, with a 512-dimensional input and output and a
+128-dimensional bottleneck. CLIP is always frozen; training consumes cached normalized embeddings
+and never reopens images or invokes CLIP. The fixed configuration is learning rate `1e-3`, weight
+decay `1e-4`, temperature `0.07`, at most 20 epochs, batch size 64 unique images, and early-stopping
+patience 4. A multi-positive symmetric loss treats every caption belonging to an image as relevant,
+avoiding false negatives among sibling captions. Checkpoint selection uses validation mean
+bidirectional MRR.
+
+Promotion is deliberately conservative: mean bidirectional MRR must improve by at least `0.005`,
+while neither direction's Recall@10 nor MRR may fall by more than `0.005`. Otherwise the report
+recommends retaining zero-shot CLIP. The small subset may fail to improve the zero-shot model, and
+either outcome is an experiment result rather than a quality claim. No test evaluation, CLIP
+gradients, LoRA, hyperparameter sweep, reranking, or index rebuilding is included.
+
+The recorded bounded CPU run stopped after 10 epochs and selected epoch 6. On the 100-image/500-
+caption validation subset, zero-shot versus adapted MRR was `0.8773` versus `0.8538` for text to
+image and `0.9437` versus `0.9433` for image to text. Mean bidirectional MRR changed by `-0.011897`,
+and text-to-image MRR exceeded the allowed regression. The conservative decision is therefore to
+retain zero-shot CLIP. These validation results selected the checkpoint and are not a final test
+benchmark.
