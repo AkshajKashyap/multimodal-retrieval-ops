@@ -304,3 +304,47 @@ text-to-image absolute differences from FlatIP were `0.0024` for Recall@10 and `
 with `0.9931` top-10 reference-set recall. Image-to-text differences were `0.0020` and `0.0031`,
 with `0.9869` top-10 reference-set recall. Timing is reported for transparency in the tracked
 report, but remains machine-specific and non-authoritative.
+
+## Milestone 7C: local persisted-index retrieval service
+
+Install the optional HTTP service and FAISS dependencies without installing CLIP:
+
+```bash
+python -m pip install -e ".[dev,faiss,serve]"
+```
+
+The service requires the existing official-test embedding cache, schema-v2 manifest, and both
+persisted indexes for the selected backend. Startup validates their model metadata, dimensions,
+fingerprints, candidate ordering, index type, and source-cache identity. Missing or stale artifacts
+leave the process live but unready; they are never rebuilt automatically.
+
+Inspect or smoke-test the default FlatIP service without opening a network port:
+
+```bash
+multimodal-retrieval-ops retrieval-service-info --backend flat
+multimodal-retrieval-ops retrieval-service-smoke --backend flat
+```
+
+Start a local server explicitly when needed:
+
+```bash
+multimodal-retrieval-ops serve-retrieval --backend flat
+multimodal-retrieval-ops serve-retrieval --backend hnsw --ef-search 64
+```
+
+FlatIP remains the default correctness-oriented backend. HNSW must be selected explicitly and uses
+only the bounded supported `efSearch` values; `64` is the Milestone 7B recommendation for these
+artifacts, not a universal performance claim.
+
+The endpoints are:
+
+- `GET /health` for process liveness only.
+- `GET /ready` for persisted-artifact readiness and concise failure reasons.
+- `GET /index-info` for backend, model, dimension, count, and fingerprint metadata.
+- `POST /retrieve/images` for cached `caption_id` to ranked image retrieval.
+- `POST /retrieve/captions` for cached `image_id` to ranked caption retrieval.
+- `GET /metrics` for bounded process-local counters and latency summaries.
+
+Only IDs already represented in the embedding cache are accepted. Arbitrary user text encoding,
+image uploads, and new image inference are intentionally deferred. Metrics are neither durable nor
+distributed: they reset on process restart and describe only one process.

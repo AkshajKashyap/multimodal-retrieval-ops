@@ -302,6 +302,23 @@ def build_parser() -> argparse.ArgumentParser:
     hnsw_image.add_argument("--k", type=int, default=10)
     hnsw_image.add_argument("--cache", type=Path)
     hnsw_image.add_argument("--artifacts-dir", type=Path)
+    for command, help_text in (
+        ("serve-retrieval", "serve persisted retrieval artifacts over HTTP"),
+        ("retrieval-service-info", "inspect retrieval-service artifact readiness"),
+        ("retrieval-service-smoke", "run bounded in-process service requests"),
+    ):
+        service = subparsers.add_parser(command, help=help_text)
+        service.add_argument("--backend", choices=("flat", "hnsw"), default="flat")
+        service.add_argument("--artifact-root", type=Path, default=Path("artifacts"))
+        service.add_argument("--embedding-cache", type=Path)
+        service.add_argument("--manifest", type=Path)
+        service.add_argument("--ef-search", type=int, choices=ALLOWED_EF_SEARCH, default=64)
+        service.add_argument("--maximum-top-k", type=int, default=100)
+        service.add_argument("--host", default="127.0.0.1")
+        service.add_argument("--port", type=int, default=8000)
+        if command == "retrieval-service-smoke":
+            service.add_argument("--report-output", type=Path)
+            service.add_argument("--metrics-output", type=Path)
     return parser
 
 
@@ -311,7 +328,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "project-info":
             print(f"multimodal-retrieval-ops {__version__}")
-            print("Milestone: 7B (bounded FAISS HNSW comparison)")
+            print("Milestone: 7C (local persisted-index retrieval service)")
             print("Runtime: lightweight base install; optional CPU/GPU CLIP extra")
         elif args.command == "generate-demo-manifest":
             output = args.output or config.manifest_path
@@ -808,6 +825,93 @@ def main(argv: list[str] | None = None) -> int:
                     sort_keys=True,
                 )
             )
+        elif args.command in {
+            "serve-retrieval",
+            "retrieval-service-info",
+            "retrieval-service-smoke",
+        }:
+            from .api.settings import ServiceSettings
+
+            settings = ServiceSettings(
+                backend=args.backend,
+                artifact_root=args.artifact_root,
+                embedding_cache_path=args.embedding_cache or config.hf_test_cache_path,
+                manifest_path=args.manifest or config.hf_flickr8k_manifest_path,
+                ef_search=args.ef_search,
+                maximum_top_k=args.maximum_top_k,
+                host=args.host,
+                port=args.port,
+            )
+            if args.command == "retrieval-service-info":
+                from .api.artifacts import ServiceArtifactError, load_service_artifacts
+
+                try:
+                    artifacts = load_service_artifacts(settings)
+                    metadata = artifacts.text_to_image.metadata
+                    information = {
+                        "artifact_validation": "passed",
+                        "backend": artifacts.backend,
+                        "caption_candidate_count": artifacts.image_to_text.metadata.candidate_count,
+                        "dataset_fingerprint": metadata.dataset_fingerprint,
+                        "ef_search": artifacts.ef_search,
+                        "embedding_dimension": metadata.embedding_dimension,
+                        "faiss_version": metadata.faiss_version,
+                        "image_candidate_count": metadata.candidate_count,
+                        "index_type": metadata.index_type,
+                        "model_name": metadata.model_name,
+                        "model_revision": metadata.model_revision,
+                        "ready": True,
+                        "reasons": [],
+                        "split": metadata.split,
+                    }
+                except ServiceArtifactError as error:
+                    information = {
+                        "artifact_validation": error.state,
+                        "backend": settings.backend,
+                        "ready": False,
+                        "reasons": [error.reason],
+                    }
+                print(json.dumps(information, indent=2, sort_keys=True))
+            else:
+                from .api.reporting import (
+                    failure_result,
+                    serving_dependencies_available,
+                    serving_dependency_message,
+                    write_service_reports,
+                )
+
+                if not serving_dependencies_available():
+                    detail = serving_dependency_message()
+                    if args.command == "retrieval-service-smoke":
+                        write_service_reports(
+                            failure_result(settings, "dependency_unavailable", detail),
+                            args.report_output or config.retrieval_service_report_path,
+                            args.metrics_output or config.retrieval_service_metrics_path,
+                        )
+                    build_parser().error(detail)
+                if args.command == "serve-retrieval":
+                    import uvicorn
+
+                    from .api.app import create_app
+
+                    uvicorn.run(
+                        create_app(settings), host=settings.host, port=settings.port
+                    )
+                else:
+                    from .api.smoke import run_service_smoke
+
+                    result = run_service_smoke(settings)
+                    write_service_reports(
+                        result,
+                        args.report_output or config.retrieval_service_report_path,
+                        args.metrics_output or config.retrieval_service_metrics_path,
+                    )
+                    if result.run_state != "success":
+                        build_parser().error(result.detail)
+                    print(
+                        f"Retrieval service smoke passed for {result.backend}; "
+                        "caption-to-image=1, image-to-caption=1"
+                    )
     except FaissFlatError as error:
         if isinstance(error, FaissDependencyError):
             state = "dependency_unavailable"

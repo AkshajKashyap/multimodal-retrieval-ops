@@ -1,0 +1,100 @@
+{
+  "artifact_readiness": "ready",
+  "backend": "flat",
+  "caption_retrieval_response": {
+    "backend": "flat",
+    "query_image_id": "test-000000",
+    "results": [
+      {
+        "caption_id": "test-000181-caption-001",
+        "caption_text": "Two Dobermans fighting or playing together on a lawn .",
+        "rank": 1,
+        "relevant_target": false,
+        "score": 0.35740387439727783,
+        "target_image_id": "test-000181"
+      },
+      {
+        "caption_id": "test-000000-caption-003",
+        "caption_text": "Two brown dogs playfully fight in the snow .",
+        "rank": 2,
+        "relevant_target": true,
+        "score": 0.33753639459609985,
+        "target_image_id": "test-000000"
+      },
+      {
+        "caption_id": "test-000000-caption-004",
+        "caption_text": "Two brown dogs wrestle in the snow .",
+        "rank": 3,
+        "relevant_target": true,
+        "score": 0.33680450916290283,
+        "target_image_id": "test-000000"
+      }
+    ]
+  },
+  "detail": "in-process cached-ID smoke completed successfully",
+  "health_response": {
+    "status": "alive"
+  },
+  "image_retrieval_response": {
+    "backend": "flat",
+    "query_caption_id": "test-000000-caption-001",
+    "results": [
+      {
+        "image_id": "test-000484",
+        "rank": 1,
+        "relevant_target": false,
+        "score": 0.2987992465496063
+      },
+      {
+        "image_id": "test-000375",
+        "rank": 2,
+        "relevant_target": false,
+        "score": 0.290996253490448
+      },
+      {
+        "image_id": "test-000833",
+        "rank": 3,
+        "relevant_target": false,
+        "score": 0.29075536131858826
+      }
+    ]
+  },
+  "index_info": {
+    "backend": "flat",
+    "caption_candidate_count": 5000,
+    "dataset_fingerprint": "f0e3df07c059a4d5516a2f7e9549240844724656ac3217429f65a44f747327ec",
+    "ef_search": null,
+    "embedding_dimension": 512,
+    "faiss_version": "1.14.3",
+    "image_candidate_count": 1000,
+    "index_type": "IndexFlatIP",
+    "model_name": "openai/clip-vit-base-patch32",
+    "model_revision": "default",
+    "split": "test"
+  },
+  "observability": {
+    "error_count": 0,
+    "invalid_top_k_count": 0,
+    "latency_observation_count": 2,
+    "mean_latency_seconds": 0.0011798555001405475,
+    "p50_latency_seconds": 0.0010021920002145634,
+    "p95_latency_seconds": 0.0013575190000665316,
+    "requests_by_backend": {
+      "flat": 2,
+      "hnsw": 0
+    },
+    "retrieval_requests_by_direction": {
+      "caption_to_image": 1,
+      "image_to_caption": 1
+    },
+    "total_requests": 5,
+    "unknown_query_id_count": 0
+  },
+  "ready_response": {
+    "artifact_validation": "passed",
+    "backend": "flat",
+    "reasons": [],
+    "status": "ready"
+  },
+  "run_state": "success"
+}

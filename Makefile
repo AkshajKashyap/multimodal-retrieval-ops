@@ -45,3 +45,15 @@ faiss-hnsw-check:
 
 faiss-hnsw-eval:
 	multimodal-retrieval-ops evaluate-faiss-hnsw
+
+retrieval-service-check:
+	pytest -q tests/test_milestone_seven_c.py
+
+retrieval-service-smoke:
+	multimodal-retrieval-ops retrieval-service-smoke --backend flat
+
+serve-retrieval-flat:
+	multimodal-retrieval-ops serve-retrieval --backend flat
+
+serve-retrieval-hnsw:
+	multimodal-retrieval-ops serve-retrieval --backend hnsw --ef-search 64
