@@ -234,3 +234,40 @@ The measured CPU run with `openai/clip-vit-base-patch32` produced:
 Dataset source: `jxie/flickr8k`. Its licensing information is not clearly exposed by the source,
 so licensing status remains **unresolved**. Downloaded images and Hugging Face caches must not be
 redistributed or committed through this repository.
+
+## Milestone 7A: exact FAISS FlatIP correctness
+
+Install the optional CPU-only FAISS backend separately from CLIP and dataset dependencies:
+
+```bash
+python -m pip install -e ".[dev,faiss]"
+```
+
+Milestone 7A reuses the existing official-test embedding cache. It never loads CLIP, runs model
+inference, or downloads data. Build two exact indexes and compare them with the NumPy cosine
+reference using:
+
+```bash
+multimodal-retrieval-ops faiss-backend-info
+multimodal-retrieval-ops build-faiss-flat-indexes
+multimodal-retrieval-ops evaluate-faiss-flat
+```
+
+Searches accept cached query identities rather than new text or image inputs:
+
+```bash
+multimodal-retrieval-ops search-faiss-text \
+  --query-caption-id test-000000-caption-001 --k 10
+multimodal-retrieval-ops search-faiss-image \
+  --query-image-id test-000000 --k 10
+```
+
+`faiss.IndexFlatIP` performs exhaustive inner-product search. Because the cached CLIP vectors are
+L2-normalized, inner product equals cosine similarity. This is still exact retrieval; approximate
+HNSW, IVF, PQ, GPU indexes, and parameter tuning are deliberately deferred.
+
+The measured Flickr8k comparison reproduced all text-to-image and image-to-text retrieval metrics
+exactly, with 100% top-1/top-5/top-10 agreement and a maximum score difference of approximately
+`2.98e-7`. This validates retrieval-backend correctness only—it does not improve or reevaluate
+model quality. Generated binary indexes and companion metadata remain ignored under
+`artifacts/faiss/`.

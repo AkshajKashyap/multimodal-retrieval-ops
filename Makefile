@@ -33,3 +33,9 @@ clip-flickr8k-smoke:
 
 clip-flickr8k-benchmark:
 	multimodal-retrieval-ops evaluate-clip-flickr8k --split test --model-name openai/clip-vit-base-patch32 --device cpu --batch-size 16
+
+faiss-check:
+	pytest -q tests/test_milestone_seven_a.py
+
+faiss-flat-eval:
+	multimodal-retrieval-ops evaluate-faiss-flat

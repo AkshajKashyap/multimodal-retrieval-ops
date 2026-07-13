@@ -33,6 +33,20 @@ from .flickr8k import (
     multi_caption_statistics,
     render_flickr8k_report,
 )
+from .faiss_flat import (
+    FaissCacheError,
+    FaissDependencyError,
+    FaissFlatError,
+    FaissIndexStaleError,
+    build_flickr8k_flat_artifacts,
+    evaluate_flickr8k_faiss,
+    faiss_available,
+    faiss_dependency_message,
+    load_flickr8k_artifacts,
+    search_cached_embedding,
+    write_correctness_outputs,
+    write_faiss_failure,
+)
 from .hf_clip_benchmark import run_hf_clip_benchmark, write_hf_clip_failure
 from .hf_flickr8k import (
     DEFAULT_HF_FLICKR8K_DATASET,
@@ -222,6 +236,35 @@ def build_parser() -> argparse.ArgumentParser:
     hf_evaluate.add_argument("--device", default="cpu")
     hf_evaluate.add_argument("--batch-size", type=int, default=16)
     hf_evaluate.add_argument("--local-files-only", action="store_true")
+    faiss_info = subparsers.add_parser(
+        "faiss-backend-info", help="show optional FAISS CPU backend availability"
+    )
+    faiss_info.add_argument("--output", type=Path)
+    faiss_build = subparsers.add_parser(
+        "build-faiss-flat-indexes", help="build FlatIP indexes from cached embeddings"
+    )
+    faiss_build.add_argument("--cache", type=Path)
+    faiss_build.add_argument("--artifacts-dir", type=Path)
+    faiss_evaluate = subparsers.add_parser(
+        "evaluate-faiss-flat", help="compare FAISS FlatIP against exact cosine"
+    )
+    faiss_evaluate.add_argument("--cache", type=Path)
+    faiss_evaluate.add_argument("--manifest", type=Path)
+    faiss_evaluate.add_argument("--artifacts-dir", type=Path)
+    faiss_text = subparsers.add_parser(
+        "search-faiss-text", help="search images using a cached caption embedding"
+    )
+    faiss_text.add_argument("--query-caption-id", required=True)
+    faiss_text.add_argument("--k", type=int, default=10)
+    faiss_text.add_argument("--cache", type=Path)
+    faiss_text.add_argument("--artifacts-dir", type=Path)
+    faiss_image = subparsers.add_parser(
+        "search-faiss-image", help="search captions using a cached image embedding"
+    )
+    faiss_image.add_argument("--query-image-id", required=True)
+    faiss_image.add_argument("--k", type=int, default=10)
+    faiss_image.add_argument("--cache", type=Path)
+    faiss_image.add_argument("--artifacts-dir", type=Path)
     return parser
 
 
@@ -231,7 +274,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "project-info":
             print(f"multimodal-retrieval-ops {__version__}")
-            print("Milestone: 6.5 (HF Flickr8k and bidirectional zero-shot CLIP)")
+            print("Milestone: 7A (FAISS Flat exact-index correctness)")
             print("Runtime: lightweight base install; optional CPU/GPU CLIP extra")
         elif args.command == "generate-demo-manifest":
             output = args.output or config.manifest_path
@@ -602,6 +645,86 @@ def main(argv: list[str] | None = None) -> int:
                 f"I2T R@1={result.image_to_text.metrics.recall_at_1:.4f}; "
                 f"cache={'hit' if cache_hit else 'miss'}"
             )
+        elif args.command == "faiss-backend-info":
+            available = faiss_available()
+            message = f"FAISS CPU backend: {'available' if available else 'not installed'}"
+            print(message)
+            if not available:
+                print(faiss_dependency_message())
+            if args.output:
+                args.output.parent.mkdir(parents=True, exist_ok=True)
+                args.output.write_text(message + "\n", encoding="utf-8")
+        elif args.command == "build-faiss-flat-indexes":
+            cache_path = args.cache or config.hf_test_cache_path
+            artifacts_dir = args.artifacts_dir or config.faiss_artifacts_path
+            text_artifact, image_artifact = build_flickr8k_flat_artifacts(
+                cache_path, artifacts_dir
+            )
+            print(
+                f"Built FAISS {text_artifact.metadata.index_type} indexes: "
+                f"{text_artifact.metadata.candidate_count} image candidates and "
+                f"{image_artifact.metadata.candidate_count} caption candidates"
+            )
+        elif args.command == "evaluate-faiss-flat":
+            cache_path = args.cache or config.hf_test_cache_path
+            manifest = args.manifest or config.hf_flickr8k_manifest_path
+            artifacts_dir = args.artifacts_dir or config.faiss_artifacts_path
+            cache, text_artifact, image_artifact = load_flickr8k_artifacts(
+                cache_path, artifacts_dir
+            )
+            result = evaluate_flickr8k_faiss(
+                cache, text_artifact, image_artifact, manifest
+            )
+            write_correctness_outputs(
+                result,
+                text_artifact.metadata,
+                config.faiss_report_path,
+                config.faiss_metrics_path,
+            )
+            print(
+                "FAISS Flat correctness: "
+                f"T2I={'pass' if result.text_to_image.correctness_gate_passed else 'fail'}, "
+                f"I2T={'pass' if result.image_to_text.correctness_gate_passed else 'fail'}"
+            )
+        elif args.command == "search-faiss-text":
+            cache_path = args.cache or config.hf_test_cache_path
+            artifacts_dir = args.artifacts_dir or config.faiss_artifacts_path
+            cache, text_artifact, _ = load_flickr8k_artifacts(cache_path, artifacts_dir)
+            results = search_cached_embedding(
+                args.query_caption_id,
+                cache.caption_embeddings,
+                text_artifact,
+                args.k,
+            )
+            print(json.dumps(results, indent=2, sort_keys=True))
+        elif args.command == "search-faiss-image":
+            cache_path = args.cache or config.hf_test_cache_path
+            artifacts_dir = args.artifacts_dir or config.faiss_artifacts_path
+            cache, _, image_artifact = load_flickr8k_artifacts(cache_path, artifacts_dir)
+            results = search_cached_embedding(
+                args.query_image_id,
+                cache.image_embeddings,
+                image_artifact,
+                args.k,
+            )
+            print(json.dumps(results, indent=2, sort_keys=True))
+    except FaissFlatError as error:
+        if isinstance(error, FaissDependencyError):
+            state = "dependency_unavailable"
+        elif isinstance(error, FaissIndexStaleError):
+            state = "cache_incompatible"
+        elif isinstance(error, FaissCacheError):
+            state = "cache_unavailable" if "missing" in str(error) else "cache_incompatible"
+        else:
+            state = "execution_failed"
+        if args.command != "faiss-backend-info":
+            write_faiss_failure(
+                config.faiss_report_path,
+                config.faiss_metrics_path,
+                state,
+                str(error),
+            )
+        build_parser().error(str(error))
     except HFFlickr8kError as error:
         if isinstance(error, HFDatasetUnavailableError):
             state = "dataset_unavailable"

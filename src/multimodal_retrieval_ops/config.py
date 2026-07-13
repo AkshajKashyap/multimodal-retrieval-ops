@@ -48,6 +48,9 @@ class ProjectConfig:
     hf_test_index_path: Path = Path("artifacts/clip/hf_flickr8k_test_index.json")
     hf_test_report_path: Path = Path("reports/clip_flickr8k_test_report.md")
     hf_test_metrics_path: Path = Path("reports/clip_flickr8k_test_metrics.json")
+    faiss_artifacts_path: Path = Path("artifacts/faiss")
+    faiss_report_path: Path = Path("reports/faiss_flat_correctness_report.md")
+    faiss_metrics_path: Path = Path("reports/faiss_flat_correctness_metrics.json")
 
 
 def load_config(path: Path | None = None) -> ProjectConfig:
@@ -160,5 +163,14 @@ def load_config(path: Path | None = None) -> ProjectConfig:
         ),
         hf_test_metrics_path=Path(
             project.get("hf_test_metrics_path", ProjectConfig.hf_test_metrics_path)
+        ),
+        faiss_artifacts_path=Path(
+            project.get("faiss_artifacts_path", ProjectConfig.faiss_artifacts_path)
+        ),
+        faiss_report_path=Path(
+            project.get("faiss_report_path", ProjectConfig.faiss_report_path)
+        ),
+        faiss_metrics_path=Path(
+            project.get("faiss_metrics_path", ProjectConfig.faiss_metrics_path)
         ),
     )

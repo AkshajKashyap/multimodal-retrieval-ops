@@ -12,6 +12,7 @@ multimodal-retrieval-ops = "multimodal_retrieval_ops.cli:main"
 dev = ["pytest", "ruff"]
 clip = ["Pillow>=10", "torch>=2.2", "transformers>=4.40"]
 hfdata = ["datasets>=3.0", "Pillow>=10"]
+faiss = ["faiss-cpu>=1.8"]
 
 [tool.ruff]
 line-length = 100

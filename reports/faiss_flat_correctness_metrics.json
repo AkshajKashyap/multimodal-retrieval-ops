@@ -1,0 +1,92 @@
+{
+  "caption_count": 5000,
+  "dataset_fingerprint": "f0e3df07c059a4d5516a2f7e9549240844724656ac3217429f65a44f747327ec",
+  "embedding_dimension": 512,
+  "faiss_version": "1.14.3",
+  "image_count": 1000,
+  "image_to_text": {
+    "candidate_count": 5000,
+    "correctness_gate_passed": true,
+    "faiss_metrics": {
+      "mean_rank": 2.498,
+      "median_rank": 1.0,
+      "mrr": 0.8031297174238955,
+      "query_count": 1000,
+      "recall_at_1": 0.717,
+      "recall_at_10": 0.956,
+      "recall_at_5": 0.917
+    },
+    "maximum_score_difference": 2.980232238769531e-07,
+    "metric_absolute_differences": {
+      "mean_rank": 0.0,
+      "median_rank": 0.0,
+      "mrr": 0.0,
+      "query_count": 0.0,
+      "recall_at_1": 0.0,
+      "recall_at_10": 0.0,
+      "recall_at_5": 0.0
+    },
+    "query_count": 1000,
+    "reference_metrics": {
+      "mean_rank": 2.498,
+      "median_rank": 1.0,
+      "mrr": 0.8031297174238955,
+      "query_count": 1000,
+      "recall_at_1": 0.717,
+      "recall_at_10": 0.956,
+      "recall_at_5": 0.917
+    },
+    "top10_set_agreement_rate": 1.0,
+    "top10_tie_explained_disagreements": 0,
+    "top1_agreement_rate": 1.0,
+    "top1_tie_explained_disagreements": 0,
+    "top5_set_agreement_rate": 1.0,
+    "top5_tie_explained_disagreements": 0
+  },
+  "index_type": "IndexFlatIP",
+  "manifest_fingerprint": "a254e77e91d14559cade632b78329ab4991971feeff5dc218da1917e15bd3d26",
+  "model_name": "openai/clip-vit-base-patch32",
+  "model_revision": "default",
+  "run_state": "success",
+  "source_cache_fingerprint": "1b44fbfa0c6a48b6ba63affce6b3016c6a4bde7b3301009cb37793813a89109f",
+  "split": "test",
+  "text_to_image": {
+    "candidate_count": 1000,
+    "correctness_gate_passed": true,
+    "faiss_metrics": {
+      "mean_rank": 5.1948,
+      "median_rank": 1.0,
+      "mrr": 0.6711967383844561,
+      "query_count": 5000,
+      "recall_at_1": 0.5538,
+      "recall_at_10": 0.891,
+      "recall_at_5": 0.816
+    },
+    "maximum_score_difference": 2.980232238769531e-07,
+    "metric_absolute_differences": {
+      "mean_rank": 0.0,
+      "median_rank": 0.0,
+      "mrr": 0.0,
+      "query_count": 0.0,
+      "recall_at_1": 0.0,
+      "recall_at_10": 0.0,
+      "recall_at_5": 0.0
+    },
+    "query_count": 5000,
+    "reference_metrics": {
+      "mean_rank": 5.1948,
+      "median_rank": 1.0,
+      "mrr": 0.6711967383844561,
+      "query_count": 5000,
+      "recall_at_1": 0.5538,
+      "recall_at_10": 0.891,
+      "recall_at_5": 0.816
+    },
+    "top10_set_agreement_rate": 1.0,
+    "top10_tie_explained_disagreements": 0,
+    "top1_agreement_rate": 1.0,
+    "top1_tie_explained_disagreements": 0,
+    "top5_set_agreement_rate": 1.0,
+    "top5_tie_explained_disagreements": 0
+  }
+}
