@@ -47,6 +47,15 @@ from .faiss_flat import (
     write_correctness_outputs,
     write_faiss_failure,
 )
+from .faiss_hnsw import (
+    ALLOWED_EF_SEARCH,
+    build_flickr8k_hnsw_artifacts,
+    evaluate_flickr8k_hnsw,
+    load_flickr8k_hnsw_artifacts,
+    search_hnsw_embedding,
+    write_hnsw_failure,
+    write_hnsw_outputs,
+)
 from .hf_clip_benchmark import run_hf_clip_benchmark, write_hf_clip_failure
 from .hf_flickr8k import (
     DEFAULT_HF_FLICKR8K_DATASET,
@@ -265,6 +274,34 @@ def build_parser() -> argparse.ArgumentParser:
     faiss_image.add_argument("--k", type=int, default=10)
     faiss_image.add_argument("--cache", type=Path)
     faiss_image.add_argument("--artifacts-dir", type=Path)
+    hnsw_build = subparsers.add_parser(
+        "build-faiss-hnsw-indexes", help="build bounded HNSW indexes from cached embeddings"
+    )
+    hnsw_build.add_argument("--cache", type=Path)
+    hnsw_build.add_argument("--artifacts-dir", type=Path)
+    hnsw_evaluate = subparsers.add_parser(
+        "evaluate-faiss-hnsw", help="compare bounded HNSW search against FlatIP"
+    )
+    hnsw_evaluate.add_argument("--cache", type=Path)
+    hnsw_evaluate.add_argument("--manifest", type=Path)
+    hnsw_evaluate.add_argument("--flat-artifacts-dir", type=Path)
+    hnsw_evaluate.add_argument("--hnsw-artifacts-dir", type=Path)
+    hnsw_text = subparsers.add_parser(
+        "search-hnsw-text", help="search HNSW images using a cached caption embedding"
+    )
+    hnsw_text.add_argument("--query-caption-id", required=True)
+    hnsw_text.add_argument("--ef-search", type=int, choices=ALLOWED_EF_SEARCH, default=32)
+    hnsw_text.add_argument("--k", type=int, default=10)
+    hnsw_text.add_argument("--cache", type=Path)
+    hnsw_text.add_argument("--artifacts-dir", type=Path)
+    hnsw_image = subparsers.add_parser(
+        "search-hnsw-image", help="search HNSW captions using a cached image embedding"
+    )
+    hnsw_image.add_argument("--query-image-id", required=True)
+    hnsw_image.add_argument("--ef-search", type=int, choices=ALLOWED_EF_SEARCH, default=32)
+    hnsw_image.add_argument("--k", type=int, default=10)
+    hnsw_image.add_argument("--cache", type=Path)
+    hnsw_image.add_argument("--artifacts-dir", type=Path)
     return parser
 
 
@@ -274,7 +311,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "project-info":
             print(f"multimodal-retrieval-ops {__version__}")
-            print("Milestone: 7A (FAISS Flat exact-index correctness)")
+            print("Milestone: 7B (bounded FAISS HNSW comparison)")
             print("Runtime: lightweight base install; optional CPU/GPU CLIP extra")
         elif args.command == "generate-demo-manifest":
             output = args.output or config.manifest_path
@@ -708,6 +745,69 @@ def main(argv: list[str] | None = None) -> int:
                 args.k,
             )
             print(json.dumps(results, indent=2, sort_keys=True))
+        elif args.command == "build-faiss-hnsw-indexes":
+            cache_path = args.cache or config.hf_test_cache_path
+            artifacts_dir = args.artifacts_dir or config.faiss_hnsw_artifacts_path
+            text_artifact, image_artifact = build_flickr8k_hnsw_artifacts(
+                cache_path, artifacts_dir
+            )
+            print(
+                f"Built FAISS {text_artifact.metadata.index_type} indexes: "
+                f"{text_artifact.metadata.candidate_count} image candidates and "
+                f"{image_artifact.metadata.candidate_count} caption candidates; "
+                f"M={text_artifact.metadata.m}, "
+                f"efConstruction={text_artifact.metadata.ef_construction}"
+            )
+        elif args.command == "evaluate-faiss-hnsw":
+            result, metadata = evaluate_flickr8k_hnsw(
+                args.cache or config.hf_test_cache_path,
+                args.manifest or config.hf_flickr8k_manifest_path,
+                args.flat_artifacts_dir or config.faiss_artifacts_path,
+                args.hnsw_artifacts_dir or config.faiss_hnsw_artifacts_path,
+            )
+            write_hnsw_outputs(
+                result,
+                metadata,
+                config.faiss_hnsw_report_path,
+                config.faiss_hnsw_metrics_path,
+            )
+            print(f"FAISS HNSW comparison complete; recommendation={result.recommendation}")
+        elif args.command == "search-hnsw-text":
+            cache, text_artifact, _ = load_flickr8k_hnsw_artifacts(
+                args.cache or config.hf_test_cache_path,
+                args.artifacts_dir or config.faiss_hnsw_artifacts_path,
+            )
+            print(
+                json.dumps(
+                    search_hnsw_embedding(
+                        args.query_caption_id,
+                        cache.caption_embeddings,
+                        text_artifact,
+                        args.k,
+                        args.ef_search,
+                    ),
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+        elif args.command == "search-hnsw-image":
+            cache, _, image_artifact = load_flickr8k_hnsw_artifacts(
+                args.cache or config.hf_test_cache_path,
+                args.artifacts_dir or config.faiss_hnsw_artifacts_path,
+            )
+            print(
+                json.dumps(
+                    search_hnsw_embedding(
+                        args.query_image_id,
+                        cache.image_embeddings,
+                        image_artifact,
+                        args.k,
+                        args.ef_search,
+                    ),
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
     except FaissFlatError as error:
         if isinstance(error, FaissDependencyError):
             state = "dependency_unavailable"
@@ -717,13 +817,15 @@ def main(argv: list[str] | None = None) -> int:
             state = "cache_unavailable" if "missing" in str(error) else "cache_incompatible"
         else:
             state = "execution_failed"
-        if args.command != "faiss-backend-info":
-            write_faiss_failure(
-                config.faiss_report_path,
-                config.faiss_metrics_path,
+        if args.command.startswith(("build-faiss-hnsw", "evaluate-faiss-hnsw", "search-hnsw")):
+            write_hnsw_failure(
+                config.faiss_hnsw_report_path,
+                config.faiss_hnsw_metrics_path,
                 state,
                 str(error),
             )
+        elif args.command != "faiss-backend-info":
+            write_faiss_failure(config.faiss_report_path, config.faiss_metrics_path, state, str(error))
         build_parser().error(str(error))
     except HFFlickr8kError as error:
         if isinstance(error, HFDatasetUnavailableError):

@@ -51,6 +51,9 @@ class ProjectConfig:
     faiss_artifacts_path: Path = Path("artifacts/faiss")
     faiss_report_path: Path = Path("reports/faiss_flat_correctness_report.md")
     faiss_metrics_path: Path = Path("reports/faiss_flat_correctness_metrics.json")
+    faiss_hnsw_artifacts_path: Path = Path("artifacts/faiss_hnsw")
+    faiss_hnsw_report_path: Path = Path("reports/faiss_hnsw_comparison_report.md")
+    faiss_hnsw_metrics_path: Path = Path("reports/faiss_hnsw_comparison_metrics.json")
 
 
 def load_config(path: Path | None = None) -> ProjectConfig:
@@ -172,5 +175,14 @@ def load_config(path: Path | None = None) -> ProjectConfig:
         ),
         faiss_metrics_path=Path(
             project.get("faiss_metrics_path", ProjectConfig.faiss_metrics_path)
+        ),
+        faiss_hnsw_artifacts_path=Path(
+            project.get("faiss_hnsw_artifacts_path", ProjectConfig.faiss_hnsw_artifacts_path)
+        ),
+        faiss_hnsw_report_path=Path(
+            project.get("faiss_hnsw_report_path", ProjectConfig.faiss_hnsw_report_path)
+        ),
+        faiss_hnsw_metrics_path=Path(
+            project.get("faiss_hnsw_metrics_path", ProjectConfig.faiss_hnsw_metrics_path)
         ),
     )

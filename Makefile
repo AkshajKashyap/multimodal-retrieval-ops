@@ -39,3 +39,9 @@ faiss-check:
 
 faiss-flat-eval:
 	multimodal-retrieval-ops evaluate-faiss-flat
+
+faiss-hnsw-check:
+	pytest -q tests/test_milestone_seven_b.py
+
+faiss-hnsw-eval:
+	multimodal-retrieval-ops evaluate-faiss-hnsw

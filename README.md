@@ -271,3 +271,36 @@ exactly, with 100% top-1/top-5/top-10 agreement and a maximum score difference o
 `2.98e-7`. This validates retrieval-backend correctness only—it does not improve or reevaluate
 model quality. Generated binary indexes and companion metadata remain ignored under
 `artifacts/faiss/`.
+
+## Milestone 7B: bounded FAISS HNSW comparison
+
+HNSW is an approximate graph index: `M` controls graph connectivity, `efConstruction` controls
+work while building the graph, and `efSearch` controls the search-time accuracy/work trade-off.
+This milestone fixes construction to `IndexHNSWFlat` with inner product, `M=32`, and
+`efConstruction=100`. It compares exactly three settings: `efSearch=16`, `32`, and `64`.
+
+The workflow reuses the existing 1,000-image/5,000-caption official-test embedding cache and the
+Milestone 7A FlatIP indexes. It does not load CLIP, regenerate embeddings, ingest data, or download
+anything:
+
+```bash
+python -m pip install -e ".[dev,faiss]"
+multimodal-retrieval-ops build-faiss-hnsw-indexes
+multimodal-retrieval-ops evaluate-faiss-hnsw
+multimodal-retrieval-ops search-hnsw-text \
+  --query-caption-id test-000000-caption-001 --ef-search 32
+multimodal-retrieval-ops search-hnsw-image \
+  --query-image-id test-000000 --ef-search 32
+```
+
+Use `make faiss-hnsw-check` for focused synthetic tests and `make faiss-hnsw-eval` for the bounded
+real comparison. FlatIP remains the exhaustive correctness reference; HNSW results quantify
+approximation agreement, downstream retrieval metrics, and machine-specific search-only timing.
+At only 1,000 or 5,000 candidates, FlatIP may be faster. These measurements do not establish
+production-scale acceleration, and approximate search is not automatically preferable.
+
+On the recorded local run, only `efSearch=64` passed the conservative two-direction gate. Its
+text-to-image absolute differences from FlatIP were `0.0024` for Recall@10 and `0.0015` for MRR,
+with `0.9931` top-10 reference-set recall. Image-to-text differences were `0.0020` and `0.0031`,
+with `0.9869` top-10 reference-set recall. Timing is reported for transparency in the tracked
+report, but remains machine-specific and non-authoritative.
