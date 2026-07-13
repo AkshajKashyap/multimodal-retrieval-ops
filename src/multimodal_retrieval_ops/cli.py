@@ -4,6 +4,7 @@ import argparse
 from dataclasses import asdict
 import json
 from pathlib import Path
+from typing import Any
 
 from . import __version__
 from .baseline_index import build_index, exact_search, load_index, write_index
@@ -306,6 +307,7 @@ def build_parser() -> argparse.ArgumentParser:
         ("serve-retrieval", "serve persisted retrieval artifacts over HTTP"),
         ("retrieval-service-info", "inspect retrieval-service artifact readiness"),
         ("retrieval-service-smoke", "run bounded in-process service requests"),
+        ("search-live-text", "search persisted images with locally encoded text"),
     ):
         service = subparsers.add_parser(command, help=help_text)
         service.add_argument("--backend", choices=("flat", "hnsw"), default="flat")
@@ -316,19 +318,37 @@ def build_parser() -> argparse.ArgumentParser:
         service.add_argument("--maximum-top-k", type=int, default=100)
         service.add_argument("--host", default="127.0.0.1")
         service.add_argument("--port", type=int, default=8000)
+        service.add_argument("--enable-text-inference", action="store_true")
+        service.add_argument("--text-model-name", default=DEFAULT_CLIP_MODEL)
+        service.add_argument("--text-model-revision")
+        service.add_argument("--text-device", default="cpu")
+        service.add_argument(
+            "--local-files-only",
+            action=argparse.BooleanOptionalAction,
+            default=True,
+        )
+        service.add_argument("--maximum-text-length", type=int, default=512)
+        service.add_argument("--text-query-cache-size", type=int, default=128)
         if command == "retrieval-service-smoke":
             service.add_argument("--report-output", type=Path)
             service.add_argument("--metrics-output", type=Path)
+        if command == "search-live-text":
+            service.add_argument("--query", required=True)
+            service.add_argument("--top-k", type=int, default=5)
     return parser
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(
+    argv: list[str] | None = None,
+    *,
+    text_encoder_factory: Any = None,
+) -> int:
     args = build_parser().parse_args(argv)
     config = load_config()
     try:
         if args.command == "project-info":
             print(f"multimodal-retrieval-ops {__version__}")
-            print("Milestone: 7C (local persisted-index retrieval service)")
+            print("Milestone: 8A (bounded arbitrary-text retrieval inference)")
             print("Runtime: lightweight base install; optional CPU/GPU CLIP extra")
         elif args.command == "generate-demo-manifest":
             output = args.output or config.manifest_path
@@ -829,6 +849,7 @@ def main(argv: list[str] | None = None) -> int:
             "serve-retrieval",
             "retrieval-service-info",
             "retrieval-service-smoke",
+            "search-live-text",
         }:
             from .api.settings import ServiceSettings
 
@@ -841,36 +862,59 @@ def main(argv: list[str] | None = None) -> int:
                 maximum_top_k=args.maximum_top_k,
                 host=args.host,
                 port=args.port,
+                enable_text_inference=(
+                    args.enable_text_inference or args.command == "search-live-text"
+                ),
+                text_model_name=args.text_model_name,
+                text_model_revision=args.text_model_revision,
+                text_device=args.text_device,
+                local_files_only=args.local_files_only,
+                maximum_text_length=args.maximum_text_length,
+                text_query_cache_size=args.text_query_cache_size,
             )
             if args.command == "retrieval-service-info":
                 from .api.artifacts import ServiceArtifactError, load_service_artifacts
 
-                try:
-                    artifacts = load_service_artifacts(settings)
-                    metadata = artifacts.text_to_image.metadata
-                    information = {
-                        "artifact_validation": "passed",
-                        "backend": artifacts.backend,
-                        "caption_candidate_count": artifacts.image_to_text.metadata.candidate_count,
-                        "dataset_fingerprint": metadata.dataset_fingerprint,
-                        "ef_search": artifacts.ef_search,
-                        "embedding_dimension": metadata.embedding_dimension,
-                        "faiss_version": metadata.faiss_version,
-                        "image_candidate_count": metadata.candidate_count,
-                        "index_type": metadata.index_type,
-                        "model_name": metadata.model_name,
-                        "model_revision": metadata.model_revision,
-                        "ready": True,
-                        "reasons": [],
-                        "split": metadata.split,
-                    }
-                except ServiceArtifactError as error:
-                    information = {
-                        "artifact_validation": error.state,
-                        "backend": settings.backend,
-                        "ready": False,
-                        "reasons": [error.reason],
-                    }
+                if settings.enable_text_inference:
+                    from fastapi.testclient import TestClient
+
+                    from .api.app import create_app
+
+                    with TestClient(
+                        create_app(settings, text_encoder_factory=text_encoder_factory)
+                    ) as client:
+                        information = client.get("/ready").json()
+                        if information["retrieval_artifacts_ready"]:
+                            information["index_info"] = client.get("/index-info").json()
+                else:
+                    try:
+                        artifacts = load_service_artifacts(settings)
+                        metadata = artifacts.text_to_image.metadata
+                        information = {
+                            "artifact_validation": "passed",
+                            "backend": artifacts.backend,
+                            "caption_candidate_count": (
+                                artifacts.image_to_text.metadata.candidate_count
+                            ),
+                            "dataset_fingerprint": metadata.dataset_fingerprint,
+                            "ef_search": artifacts.ef_search,
+                            "embedding_dimension": metadata.embedding_dimension,
+                            "faiss_version": metadata.faiss_version,
+                            "image_candidate_count": metadata.candidate_count,
+                            "index_type": metadata.index_type,
+                            "model_name": metadata.model_name,
+                            "model_revision": metadata.model_revision,
+                            "ready": True,
+                            "reasons": [],
+                            "split": metadata.split,
+                        }
+                    except ServiceArtifactError as error:
+                        information = {
+                            "artifact_validation": error.state,
+                            "backend": settings.backend,
+                            "ready": False,
+                            "reasons": [error.reason],
+                        }
                 print(json.dumps(information, indent=2, sort_keys=True))
             else:
                 from .api.reporting import (
@@ -883,11 +927,22 @@ def main(argv: list[str] | None = None) -> int:
                 if not serving_dependencies_available():
                     detail = serving_dependency_message()
                     if args.command == "retrieval-service-smoke":
-                        write_service_reports(
-                            failure_result(settings, "dependency_unavailable", detail),
-                            args.report_output or config.retrieval_service_report_path,
-                            args.metrics_output or config.retrieval_service_metrics_path,
-                        )
+                        failure = failure_result(settings, "dependency_unavailable", detail)
+                        if settings.enable_text_inference:
+                            from .api.text_reporting import write_text_inference_reports
+
+                            write_text_inference_reports(
+                                failure,
+                                settings,
+                                args.report_output or config.text_inference_service_report_path,
+                                args.metrics_output or config.text_inference_service_metrics_path,
+                            )
+                        else:
+                            write_service_reports(
+                                failure,
+                                args.report_output or config.retrieval_service_report_path,
+                                args.metrics_output or config.retrieval_service_metrics_path,
+                            )
                     build_parser().error(detail)
                 if args.command == "serve-retrieval":
                     import uvicorn
@@ -895,23 +950,57 @@ def main(argv: list[str] | None = None) -> int:
                     from .api.app import create_app
 
                     uvicorn.run(
-                        create_app(settings), host=settings.host, port=settings.port
+                        create_app(settings, text_encoder_factory=text_encoder_factory),
+                        host=settings.host,
+                        port=settings.port,
                     )
+                elif args.command == "search-live-text":
+                    from .api.smoke import run_live_text_query
+
+                    live_result = run_live_text_query(
+                        settings,
+                        args.query,
+                        args.top_k,
+                        text_encoder_factory=text_encoder_factory,
+                    )
+                    if live_result["status_code"] != 200:
+                        build_parser().error(
+                            json.dumps(live_result["response"], sort_keys=True)
+                        )
+                    print(json.dumps(live_result["response"], indent=2, sort_keys=True))
                 else:
                     from .api.smoke import run_service_smoke
 
-                    result = run_service_smoke(settings)
-                    write_service_reports(
-                        result,
-                        args.report_output or config.retrieval_service_report_path,
-                        args.metrics_output or config.retrieval_service_metrics_path,
+                    result = run_service_smoke(
+                        settings, text_encoder_factory=text_encoder_factory
                     )
+                    if settings.enable_text_inference:
+                        from .api.text_reporting import write_text_inference_reports
+
+                        write_text_inference_reports(
+                            result,
+                            settings,
+                            args.report_output or config.text_inference_service_report_path,
+                            args.metrics_output or config.text_inference_service_metrics_path,
+                        )
+                    else:
+                        write_service_reports(
+                            result,
+                            args.report_output or config.retrieval_service_report_path,
+                            args.metrics_output or config.retrieval_service_metrics_path,
+                        )
                     if result.run_state != "success":
                         build_parser().error(result.detail)
-                    print(
-                        f"Retrieval service smoke passed for {result.backend}; "
-                        "caption-to-image=1, image-to-caption=1"
-                    )
+                    if settings.enable_text_inference:
+                        print(
+                            f"Text inference smoke passed for {result.backend}; "
+                            "requests=2, encoder-invocations=1, cache-hits=1"
+                        )
+                    else:
+                        print(
+                            f"Retrieval service smoke passed for {result.backend}; "
+                            "caption-to-image=1, image-to-caption=1"
+                        )
     except FaissFlatError as error:
         if isinstance(error, FaissDependencyError):
             state = "dependency_unavailable"

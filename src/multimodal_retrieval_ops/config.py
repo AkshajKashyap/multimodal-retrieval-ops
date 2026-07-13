@@ -56,6 +56,8 @@ class ProjectConfig:
     faiss_hnsw_metrics_path: Path = Path("reports/faiss_hnsw_comparison_metrics.json")
     retrieval_service_report_path: Path = Path("reports/retrieval_service_report.md")
     retrieval_service_metrics_path: Path = Path("reports/retrieval_service_metrics.json")
+    text_inference_service_report_path: Path = Path("reports/text_inference_service_report.md")
+    text_inference_service_metrics_path: Path = Path("reports/text_inference_service_metrics.json")
 
 
 def load_config(path: Path | None = None) -> ProjectConfig:
@@ -195,6 +197,18 @@ def load_config(path: Path | None = None) -> ProjectConfig:
         retrieval_service_metrics_path=Path(
             project.get(
                 "retrieval_service_metrics_path", ProjectConfig.retrieval_service_metrics_path
+            )
+        ),
+        text_inference_service_report_path=Path(
+            project.get(
+                "text_inference_service_report_path",
+                ProjectConfig.text_inference_service_report_path,
+            )
+        ),
+        text_inference_service_metrics_path=Path(
+            project.get(
+                "text_inference_service_metrics_path",
+                ProjectConfig.text_inference_service_metrics_path,
             )
         ),
     )

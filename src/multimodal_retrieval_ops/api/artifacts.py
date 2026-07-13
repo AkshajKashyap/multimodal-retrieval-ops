@@ -44,6 +44,9 @@ class ServiceArtifacts:
     image_to_text: FaissIndexArtifact | HNSWIndexArtifact
     caption_targets: dict[str, str]
     caption_text: dict[str, str]
+    image_captions: dict[str, list[str]]
+    safe_image_paths: dict[str, str]
+    image_splits: dict[str, str]
     backend: str
     ef_search: int | None
 
@@ -91,7 +94,13 @@ def _validate_vectors(cache: HFBenchmarkCache) -> None:
 
 def _load_manifest_metadata(
     manifest_path: Path, cache: HFBenchmarkCache
-) -> tuple[dict[str, str], dict[str, str]]:
+) -> tuple[
+    dict[str, str],
+    dict[str, str],
+    dict[str, list[str]],
+    dict[str, str],
+    dict[str, str],
+]:
     try:
         raw_rows = read_manifest(manifest_path)
     except Exception as error:
@@ -119,7 +128,24 @@ def _load_manifest_metadata(
         raise ServiceArtifactError(
             "artifact_incompatible", "manifest image IDs do not match the cache"
         )
-    return caption_targets, caption_text
+    image_captions: dict[str, list[tuple[str, str]]] = {}
+    safe_image_paths: dict[str, str] = {}
+    image_splits: dict[str, str] = {}
+    for row in rows:
+        image_captions.setdefault(row.image_id, []).append((row.caption_id, row.caption))
+        safe_image_paths[row.image_id] = f"{row.split}/{Path(row.image_path).name}"
+        image_splits[row.image_id] = row.split
+    ordered_captions = {
+        image_id: [caption for _, caption in sorted(captions)]
+        for image_id, captions in image_captions.items()
+    }
+    return (
+        caption_targets,
+        caption_text,
+        ordered_captions,
+        safe_image_paths,
+        image_splits,
+    )
 
 
 def _validate_loaded_indexes(
@@ -209,7 +235,13 @@ def load_service_artifacts(settings: ServiceSettings) -> ServiceArtifacts:
     try:
         cache = load_hf_benchmark_cache(settings.embedding_cache_path)
         _validate_vectors(cache)
-        caption_targets, caption_text = _load_manifest_metadata(settings.manifest_path, cache)
+        (
+            caption_targets,
+            caption_text,
+            image_captions,
+            safe_image_paths,
+            image_splits,
+        ) = _load_manifest_metadata(settings.manifest_path, cache)
         if settings.backend == "flat":
             text_index, image_index = _load_flat(settings, cache)
         else:
@@ -231,6 +263,9 @@ def load_service_artifacts(settings: ServiceSettings) -> ServiceArtifacts:
         image_to_text=image_index,
         caption_targets=caption_targets,
         caption_text=caption_text,
+        image_captions=image_captions,
+        safe_image_paths=safe_image_paths,
+        image_splits=image_splits,
         backend=settings.backend,
         ef_search=settings.ef_search if settings.backend == "hnsw" else None,
     )

@@ -11,6 +11,10 @@ class ReadyResponse(BaseModel):
     status: str
     backend: str
     artifact_validation: str
+    retrieval_artifacts_ready: bool
+    text_encoder_enabled: bool
+    text_encoder_ready: bool
+    text_encoder_state: str
     reasons: list[str]
 
 
@@ -26,6 +30,12 @@ class IndexInfoResponse(BaseModel):
     dataset_fingerprint: str
     split: str
     ef_search: int | None
+    text_inference_enabled: bool
+    text_model_name: str
+    text_model_revision: str
+    text_encoder_ready: bool
+    text_embedding_dimension: int | None
+    local_files_only: bool
 
 
 class ImageRetrievalRequest(BaseModel):
@@ -66,6 +76,29 @@ class CaptionRetrievalResponse(BaseModel):
     results: list[CaptionResult]
 
 
+class TextSearchRequest(BaseModel):
+    query: str
+    top_k: int
+
+
+class TextImageResult(BaseModel):
+    image_id: str
+    score: float
+    rank: int
+    split: str
+    image_path: str
+    captions: list[str]
+
+
+class TextSearchResponse(BaseModel):
+    query: str
+    backend: str
+    model_name: str
+    embedding_dimension: int
+    cached_query: bool
+    results: list[TextImageResult]
+
+
 class MetricsResponse(BaseModel):
     total_requests: int
     retrieval_requests_by_direction: dict[str, int]
@@ -77,3 +110,12 @@ class MetricsResponse(BaseModel):
     mean_latency_seconds: float
     p50_latency_seconds: float
     p95_latency_seconds: float
+    arbitrary_text_request_count: int
+    text_encoder_invocation_count: int
+    text_query_cache_hits: int
+    text_query_cache_misses: int
+    text_inference_errors: int
+    text_inference_latency_count: int
+    text_inference_latency_mean_seconds: float
+    text_inference_latency_p50_seconds: float
+    text_inference_latency_p95_seconds: float

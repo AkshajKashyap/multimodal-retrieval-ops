@@ -43,6 +43,7 @@ class ServiceSmokeResult:
     caption_retrieval_response: dict[str, Any] | None
     observability: dict[str, Any] | None
     detail: str
+    text_search_responses: list[dict[str, Any]] | None = None
 
 
 def _format_result_ids(response: dict[str, Any] | None, key: str) -> str:

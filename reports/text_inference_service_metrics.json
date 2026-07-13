@@ -1,0 +1,177 @@
+{
+  "artifact_readiness": "ready",
+  "backend": "flat",
+  "caption_retrieval_response": null,
+  "detail": "in-process arbitrary-text smoke completed successfully",
+  "health_response": {
+    "status": "alive"
+  },
+  "image_retrieval_response": null,
+  "index_info": {
+    "backend": "flat",
+    "caption_candidate_count": 5000,
+    "dataset_fingerprint": "f0e3df07c059a4d5516a2f7e9549240844724656ac3217429f65a44f747327ec",
+    "ef_search": null,
+    "embedding_dimension": 512,
+    "faiss_version": "1.14.3",
+    "image_candidate_count": 1000,
+    "index_type": "IndexFlatIP",
+    "local_files_only": true,
+    "model_name": "openai/clip-vit-base-patch32",
+    "model_revision": "default",
+    "split": "test",
+    "text_embedding_dimension": 512,
+    "text_encoder_ready": true,
+    "text_inference_enabled": true,
+    "text_model_name": "openai/clip-vit-base-patch32",
+    "text_model_revision": "default"
+  },
+  "observability": {
+    "arbitrary_text_request_count": 2,
+    "error_count": 0,
+    "invalid_top_k_count": 0,
+    "latency_observation_count": 0,
+    "mean_latency_seconds": 0.0,
+    "p50_latency_seconds": 0.0,
+    "p95_latency_seconds": 0.0,
+    "requests_by_backend": {
+      "flat": 2,
+      "hnsw": 0
+    },
+    "retrieval_requests_by_direction": {
+      "caption_to_image": 0,
+      "image_to_caption": 0
+    },
+    "text_encoder_invocation_count": 1,
+    "text_inference_errors": 0,
+    "text_inference_latency_count": 2,
+    "text_inference_latency_mean_seconds": 0.22601787250005145,
+    "text_inference_latency_p50_seconds": 0.0011603849998209625,
+    "text_inference_latency_p95_seconds": 0.45087536000028194,
+    "text_query_cache_hits": 1,
+    "text_query_cache_misses": 1,
+    "total_requests": 5,
+    "unknown_query_id_count": 0
+  },
+  "ready_response": {
+    "artifact_validation": "passed",
+    "backend": "flat",
+    "reasons": [],
+    "retrieval_artifacts_ready": true,
+    "status": "ready",
+    "text_encoder_enabled": true,
+    "text_encoder_ready": true,
+    "text_encoder_state": "ready"
+  },
+  "run_state": "success",
+  "settings": {
+    "backend": "flat",
+    "local_files_only": true,
+    "text_model_name": "openai/clip-vit-base-patch32",
+    "text_model_revision": "default"
+  },
+  "text_search_responses": [
+    {
+      "backend": "flat",
+      "cached_query": false,
+      "embedding_dimension": 512,
+      "model_name": "openai/clip-vit-base-patch32",
+      "query": "a dog running outside",
+      "results": [
+        {
+          "captions": [
+            "A brown , black , and white dog runs along on the gravel .",
+            "A dog runs",
+            "A little dog running on sand .",
+            "The brown , white and black dog runs on a gravel surface .",
+            "The dog is running across the gravel ."
+          ],
+          "image_id": "test-000412",
+          "image_path": "test/test-000412.jpg",
+          "rank": 1,
+          "score": 0.31682127714157104,
+          "split": "test"
+        },
+        {
+          "captions": [
+            "A dog with a blue ball running in a field .",
+            "a small tan dog running on the grass with a ball in his mouth",
+            "Dog running towards camera with a ball in its mouth .",
+            "small dog running in the grass with a toy in its mouth",
+            "The dog is running with a colorful ball ."
+          ],
+          "image_id": "test-000954",
+          "image_path": "test/test-000954.jpg",
+          "rank": 2,
+          "score": 0.31672900915145874,
+          "split": "test"
+        },
+        {
+          "captions": [
+            "A dog chases a stuffed animal attached to a string .",
+            "A white and black dog chases after a decoy-animal on a string .",
+            "A white dog is chasing a stuffed animal being pulled on a string .",
+            "The white dog is chasing a toy that is attached to a string across the grass .",
+            "The white dog is running in the green grass ."
+          ],
+          "image_id": "test-000243",
+          "image_path": "test/test-000243.jpg",
+          "rank": 3,
+          "score": 0.3109816908836365,
+          "split": "test"
+        }
+      ]
+    },
+    {
+      "backend": "flat",
+      "cached_query": true,
+      "embedding_dimension": 512,
+      "model_name": "openai/clip-vit-base-patch32",
+      "query": "a dog running outside",
+      "results": [
+        {
+          "captions": [
+            "A brown , black , and white dog runs along on the gravel .",
+            "A dog runs",
+            "A little dog running on sand .",
+            "The brown , white and black dog runs on a gravel surface .",
+            "The dog is running across the gravel ."
+          ],
+          "image_id": "test-000412",
+          "image_path": "test/test-000412.jpg",
+          "rank": 1,
+          "score": 0.31682127714157104,
+          "split": "test"
+        },
+        {
+          "captions": [
+            "A dog with a blue ball running in a field .",
+            "a small tan dog running on the grass with a ball in his mouth",
+            "Dog running towards camera with a ball in its mouth .",
+            "small dog running in the grass with a toy in its mouth",
+            "The dog is running with a colorful ball ."
+          ],
+          "image_id": "test-000954",
+          "image_path": "test/test-000954.jpg",
+          "rank": 2,
+          "score": 0.31672900915145874,
+          "split": "test"
+        },
+        {
+          "captions": [
+            "A dog chases a stuffed animal attached to a string .",
+            "A white and black dog chases after a decoy-animal on a string .",
+            "A white dog is chasing a stuffed animal being pulled on a string .",
+            "The white dog is chasing a toy that is attached to a string across the grass .",
+            "The white dog is running in the green grass ."
+          ],
+          "image_id": "test-000243",
+          "image_path": "test/test-000243.jpg",
+          "rank": 3,
+          "score": 0.3109816908836365,
+          "split": "test"
+        }
+      ]
+    }
+  ]
+}

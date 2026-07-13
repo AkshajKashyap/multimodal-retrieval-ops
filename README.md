@@ -348,3 +348,49 @@ The endpoints are:
 Only IDs already represented in the embedding cache are accepted. Arbitrary user text encoding,
 image uploads, and new image inference are intentionally deferred. Metrics are neither durable nor
 distributed: they reset on process restart and describe only one process.
+
+## Milestone 8A: bounded arbitrary text-to-image inference
+
+Install the existing optional CLIP, FAISS, and service extras:
+
+```bash
+python -m pip install -e ".[dev,clip,faiss,serve]"
+```
+
+Arbitrary text inference is disabled by default. Cached-ID retrieval therefore continues to start
+without loading CLIP. Enabling text search requires the existing 1,000-image persisted index and
+embedding cache plus locally cached `openai/clip-vit-base-patch32` weights. Model loading uses
+local-files-only behavior unless explicitly overridden:
+
+```bash
+multimodal-retrieval-ops retrieval-service-info \
+  --backend flat --enable-text-inference --local-files-only
+multimodal-retrieval-ops serve-retrieval \
+  --backend flat --enable-text-inference --local-files-only
+```
+
+Search through the API:
+
+```bash
+curl -X POST http://127.0.0.1:8000/search/text \
+  -H 'content-type: application/json' \
+  -d '{"query":"a dog running outside","top_k":5}'
+```
+
+Or run one local in-process query without binding a port:
+
+```bash
+multimodal-retrieval-ops search-live-text \
+  --backend flat --query "a dog running outside" --top-k 5 --local-files-only
+```
+
+The service normalizes query strings and keeps a bounded process-local LRU embedding cache, so a
+repeated equivalent query avoids another encoder call. The Hugging Face implementation must load
+the full `CLIPModel` object, but it invokes only the text tower—there is no image decoding or vision
+inference in this milestone. Query vectors are checked for finite values, dimension compatibility,
+and L2 normalization before FlatIP or optional HNSW search. FlatIP remains the conservative default;
+HNSW is enabled explicitly with `--backend hnsw --ef-search 64`.
+
+CPU model startup and uncached queries may be slow. The cache and metrics are local to one process
+and reset at shutdown. Image uploads, image inference, fine-tuning, training, and reranking remain
+intentionally deferred.

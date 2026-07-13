@@ -30,7 +30,13 @@ class ServiceMetrics:
     error_count: int = 0
     unknown_query_id_count: int = 0
     invalid_top_k_count: int = 0
+    arbitrary_text_request_count: int = 0
+    text_encoder_invocation_count: int = 0
+    text_query_cache_hits: int = 0
+    text_query_cache_misses: int = 0
+    text_inference_errors: int = 0
     _latencies: list[float] = field(default_factory=list)
+    _text_latencies: list[float] = field(default_factory=list)
     _lock: Lock = field(default_factory=Lock, repr=False)
 
     def record_request(self, is_error: bool) -> None:
@@ -55,9 +61,38 @@ class ServiceMetrics:
         with self._lock:
             self.invalid_top_k_count += 1
 
+    def record_text_request(self) -> None:
+        with self._lock:
+            self.arbitrary_text_request_count += 1
+
+    def record_text_encoder_invocation(self) -> None:
+        with self._lock:
+            self.text_encoder_invocation_count += 1
+
+    def record_text_cache(self, hit: bool) -> None:
+        with self._lock:
+            if hit:
+                self.text_query_cache_hits += 1
+            else:
+                self.text_query_cache_misses += 1
+
+    def record_text_error(self) -> None:
+        with self._lock:
+            self.text_inference_errors += 1
+
+    def record_text_latency(self, latency_seconds: float, backend: str) -> None:
+        with self._lock:
+            self.requests_by_backend[backend] += 1
+            self._text_latencies.append(latency_seconds)
+            if len(self._text_latencies) > MAX_LATENCY_OBSERVATIONS:
+                del self._text_latencies[
+                    : len(self._text_latencies) - MAX_LATENCY_OBSERVATIONS
+                ]
+
     def snapshot(self) -> dict[str, object]:
         with self._lock:
             latencies = list(self._latencies)
+            text_latencies = list(self._text_latencies)
             return {
                 "total_requests": self.total_requests,
                 "retrieval_requests_by_direction": dict(self.retrieval_requests_by_direction),
@@ -69,4 +104,15 @@ class ServiceMetrics:
                 "mean_latency_seconds": statistics.mean(latencies) if latencies else 0.0,
                 "p50_latency_seconds": _percentile(latencies, 0.50),
                 "p95_latency_seconds": _percentile(latencies, 0.95),
+                "arbitrary_text_request_count": self.arbitrary_text_request_count,
+                "text_encoder_invocation_count": self.text_encoder_invocation_count,
+                "text_query_cache_hits": self.text_query_cache_hits,
+                "text_query_cache_misses": self.text_query_cache_misses,
+                "text_inference_errors": self.text_inference_errors,
+                "text_inference_latency_count": len(text_latencies),
+                "text_inference_latency_mean_seconds": (
+                    statistics.mean(text_latencies) if text_latencies else 0.0
+                ),
+                "text_inference_latency_p50_seconds": _percentile(text_latencies, 0.50),
+                "text_inference_latency_p95_seconds": _percentile(text_latencies, 0.95),
             }

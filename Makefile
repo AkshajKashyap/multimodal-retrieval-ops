@@ -57,3 +57,12 @@ serve-retrieval-flat:
 
 serve-retrieval-hnsw:
 	multimodal-retrieval-ops serve-retrieval --backend hnsw --ef-search 64
+
+text-inference-check:
+	pytest -q tests/test_milestone_eight_a.py
+
+text-inference-smoke-flat:
+	multimodal-retrieval-ops retrieval-service-smoke --backend flat --enable-text-inference --local-files-only
+
+text-inference-smoke-hnsw:
+	multimodal-retrieval-ops retrieval-service-smoke --backend hnsw --ef-search 64 --enable-text-inference --local-files-only

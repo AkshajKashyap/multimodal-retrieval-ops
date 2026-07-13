@@ -120,7 +120,9 @@ class ClipEmbeddingBackend:
         try:
             for start in range(0, len(texts), self.batch_size):
                 batch = texts[start : start + self.batch_size]
-                inputs = self._processor(text=batch, return_tensors="pt", padding=True)
+                inputs = self._processor(
+                    text=batch, return_tensors="pt", padding=True, truncation=True
+                )
                 inputs = {name: value.to(self.device) for name, value in inputs.items()}
                 with self._torch.inference_mode():
                     output = self._model.text_model(**inputs)
