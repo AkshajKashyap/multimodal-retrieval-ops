@@ -1,0 +1,175 @@
+{
+  "artifact_readiness": "ready",
+  "backend": "flat",
+  "caption_retrieval_response": null,
+  "detail": "in-process arbitrary-image smoke completed successfully",
+  "health_response": {
+    "status": "alive"
+  },
+  "image_retrieval_response": null,
+  "image_search_responses": [
+    {
+      "backend": "flat",
+      "cached_query": false,
+      "embedding_dimension": 512,
+      "image_identifier": "04d25b80373cbbf7",
+      "model_name": "openai/clip-vit-base-patch32",
+      "results": [
+        {
+          "caption_id": "test-000181-caption-001",
+          "caption_text": "Two Dobermans fighting or playing together on a lawn .",
+          "rank": 1,
+          "score": 0.3574039340019226,
+          "split": "test",
+          "target_image_id": "test-000181"
+        },
+        {
+          "caption_id": "test-000000-caption-003",
+          "caption_text": "Two brown dogs playfully fight in the snow .",
+          "rank": 2,
+          "score": 0.337536484003067,
+          "split": "test",
+          "target_image_id": "test-000000"
+        },
+        {
+          "caption_id": "test-000000-caption-004",
+          "caption_text": "Two brown dogs wrestle in the snow .",
+          "rank": 3,
+          "score": 0.3368045687675476,
+          "split": "test",
+          "target_image_id": "test-000000"
+        }
+      ]
+    },
+    {
+      "backend": "flat",
+      "cached_query": true,
+      "embedding_dimension": 512,
+      "image_identifier": "04d25b80373cbbf7",
+      "model_name": "openai/clip-vit-base-patch32",
+      "results": [
+        {
+          "caption_id": "test-000181-caption-001",
+          "caption_text": "Two Dobermans fighting or playing together on a lawn .",
+          "rank": 1,
+          "score": 0.3574039340019226,
+          "split": "test",
+          "target_image_id": "test-000181"
+        },
+        {
+          "caption_id": "test-000000-caption-003",
+          "caption_text": "Two brown dogs playfully fight in the snow .",
+          "rank": 2,
+          "score": 0.337536484003067,
+          "split": "test",
+          "target_image_id": "test-000000"
+        },
+        {
+          "caption_id": "test-000000-caption-004",
+          "caption_text": "Two brown dogs wrestle in the snow .",
+          "rank": 3,
+          "score": 0.3368045687675476,
+          "split": "test",
+          "target_image_id": "test-000000"
+        }
+      ]
+    }
+  ],
+  "index_info": {
+    "accepted_image_formats": [
+      "JPEG",
+      "PNG",
+      "WEBP"
+    ],
+    "backend": "flat",
+    "caption_candidate_count": 5000,
+    "dataset_fingerprint": "f0e3df07c059a4d5516a2f7e9549240844724656ac3217429f65a44f747327ec",
+    "ef_search": null,
+    "embedding_dimension": 512,
+    "faiss_version": "1.14.3",
+    "image_candidate_count": 1000,
+    "image_encoder_ready": true,
+    "image_inference_enabled": true,
+    "image_model_name": "openai/clip-vit-base-patch32",
+    "image_model_revision": "default",
+    "index_type": "IndexFlatIP",
+    "local_files_only": true,
+    "maximum_pixel_count": 20000000,
+    "maximum_upload_bytes": 10485760,
+    "model_name": "openai/clip-vit-base-patch32",
+    "model_revision": "default",
+    "split": "test",
+    "text_embedding_dimension": null,
+    "text_encoder_ready": false,
+    "text_inference_enabled": false,
+    "text_model_name": "openai/clip-vit-base-patch32",
+    "text_model_revision": "default",
+    "vision_embedding_dimension": 512
+  },
+  "observability": {
+    "arbitrary_image_request_count": 2,
+    "arbitrary_text_request_count": 0,
+    "error_count": 0,
+    "image_encoder_invocation_count": 1,
+    "image_inference_errors": 0,
+    "image_inference_latency_count": 2,
+    "image_inference_latency_mean_seconds": 0.3989812395000172,
+    "image_inference_latency_p50_seconds": 0.0008848660000921882,
+    "image_inference_latency_p95_seconds": 0.7970776129999422,
+    "image_query_cache_hits": 1,
+    "image_query_cache_misses": 1,
+    "image_validation_errors": 0,
+    "invalid_top_k_count": 0,
+    "latency_observation_count": 0,
+    "mean_latency_seconds": 0.0,
+    "p50_latency_seconds": 0.0,
+    "p95_latency_seconds": 0.0,
+    "requests_by_backend": {
+      "flat": 2,
+      "hnsw": 0
+    },
+    "retrieval_requests_by_direction": {
+      "caption_to_image": 0,
+      "image_to_caption": 0
+    },
+    "text_encoder_invocation_count": 0,
+    "text_inference_errors": 0,
+    "text_inference_latency_count": 0,
+    "text_inference_latency_mean_seconds": 0.0,
+    "text_inference_latency_p50_seconds": 0.0,
+    "text_inference_latency_p95_seconds": 0.0,
+    "text_query_cache_hits": 0,
+    "text_query_cache_misses": 0,
+    "total_requests": 5,
+    "unknown_query_id_count": 0,
+    "uploaded_byte_total": 210866
+  },
+  "ready_response": {
+    "artifact_validation": "passed",
+    "backend": "flat",
+    "image_encoder_enabled": true,
+    "image_encoder_ready": true,
+    "image_encoder_state": "ready",
+    "reasons": [],
+    "retrieval_artifacts_ready": true,
+    "status": "ready",
+    "text_encoder_enabled": false,
+    "text_encoder_ready": false,
+    "text_encoder_state": "disabled"
+  },
+  "run_state": "success",
+  "settings": {
+    "allowed_image_formats": [
+      "JPEG",
+      "PNG",
+      "WEBP"
+    ],
+    "backend": "flat",
+    "image_model_name": "openai/clip-vit-base-patch32",
+    "image_model_revision": "default",
+    "local_files_only": true,
+    "maximum_pixel_count": 20000000,
+    "maximum_upload_bytes": 10485760
+  },
+  "text_search_responses": null
+}

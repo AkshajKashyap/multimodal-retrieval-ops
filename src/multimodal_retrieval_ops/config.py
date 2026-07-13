@@ -58,6 +58,8 @@ class ProjectConfig:
     retrieval_service_metrics_path: Path = Path("reports/retrieval_service_metrics.json")
     text_inference_service_report_path: Path = Path("reports/text_inference_service_report.md")
     text_inference_service_metrics_path: Path = Path("reports/text_inference_service_metrics.json")
+    image_inference_service_report_path: Path = Path("reports/image_inference_service_report.md")
+    image_inference_service_metrics_path: Path = Path("reports/image_inference_service_metrics.json")
 
 
 def load_config(path: Path | None = None) -> ProjectConfig:
@@ -209,6 +211,18 @@ def load_config(path: Path | None = None) -> ProjectConfig:
             project.get(
                 "text_inference_service_metrics_path",
                 ProjectConfig.text_inference_service_metrics_path,
+            )
+        ),
+        image_inference_service_report_path=Path(
+            project.get(
+                "image_inference_service_report_path",
+                ProjectConfig.image_inference_service_report_path,
+            )
+        ),
+        image_inference_service_metrics_path=Path(
+            project.get(
+                "image_inference_service_metrics_path",
+                ProjectConfig.image_inference_service_metrics_path,
             )
         ),
     )

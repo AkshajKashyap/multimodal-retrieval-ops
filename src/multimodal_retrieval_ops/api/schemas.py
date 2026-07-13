@@ -15,6 +15,9 @@ class ReadyResponse(BaseModel):
     text_encoder_enabled: bool
     text_encoder_ready: bool
     text_encoder_state: str
+    image_encoder_enabled: bool
+    image_encoder_ready: bool
+    image_encoder_state: str
     reasons: list[str]
 
 
@@ -36,6 +39,14 @@ class IndexInfoResponse(BaseModel):
     text_encoder_ready: bool
     text_embedding_dimension: int | None
     local_files_only: bool
+    image_inference_enabled: bool
+    image_encoder_ready: bool
+    image_model_name: str
+    image_model_revision: str
+    vision_embedding_dimension: int | None
+    accepted_image_formats: list[str]
+    maximum_upload_bytes: int
+    maximum_pixel_count: int
 
 
 class ImageRetrievalRequest(BaseModel):
@@ -99,6 +110,24 @@ class TextSearchResponse(BaseModel):
     results: list[TextImageResult]
 
 
+class LiveCaptionResult(BaseModel):
+    caption_id: str
+    target_image_id: str
+    caption_text: str
+    score: float
+    rank: int
+    split: str
+
+
+class ImageSearchResponse(BaseModel):
+    backend: str
+    model_name: str
+    embedding_dimension: int
+    image_identifier: str
+    cached_query: bool
+    results: list[LiveCaptionResult]
+
+
 class MetricsResponse(BaseModel):
     total_requests: int
     retrieval_requests_by_direction: dict[str, int]
@@ -119,3 +148,14 @@ class MetricsResponse(BaseModel):
     text_inference_latency_mean_seconds: float
     text_inference_latency_p50_seconds: float
     text_inference_latency_p95_seconds: float
+    arbitrary_image_request_count: int
+    image_encoder_invocation_count: int
+    image_query_cache_hits: int
+    image_query_cache_misses: int
+    image_validation_errors: int
+    image_inference_errors: int
+    uploaded_byte_total: int
+    image_inference_latency_count: int
+    image_inference_latency_mean_seconds: float
+    image_inference_latency_p50_seconds: float
+    image_inference_latency_p95_seconds: float

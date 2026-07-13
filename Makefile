@@ -66,3 +66,12 @@ text-inference-smoke-flat:
 
 text-inference-smoke-hnsw:
 	multimodal-retrieval-ops retrieval-service-smoke --backend hnsw --ef-search 64 --enable-text-inference --local-files-only
+
+image-inference-check:
+	pytest -q tests/test_milestone_eight_b.py
+
+image-inference-smoke-flat:
+	multimodal-retrieval-ops retrieval-service-smoke --backend flat --enable-image-inference --local-files-only
+
+image-inference-smoke-hnsw:
+	multimodal-retrieval-ops retrieval-service-smoke --backend hnsw --ef-search 64 --enable-image-inference --local-files-only

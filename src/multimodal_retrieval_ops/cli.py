@@ -308,6 +308,7 @@ def build_parser() -> argparse.ArgumentParser:
         ("retrieval-service-info", "inspect retrieval-service artifact readiness"),
         ("retrieval-service-smoke", "run bounded in-process service requests"),
         ("search-live-text", "search persisted images with locally encoded text"),
+        ("search-live-image", "search persisted captions with a locally encoded image"),
     ):
         service = subparsers.add_parser(command, help=help_text)
         service.add_argument("--backend", choices=("flat", "hnsw"), default="flat")
@@ -329,11 +330,22 @@ def build_parser() -> argparse.ArgumentParser:
         )
         service.add_argument("--maximum-text-length", type=int, default=512)
         service.add_argument("--text-query-cache-size", type=int, default=128)
+        service.add_argument("--enable-image-inference", action="store_true")
+        service.add_argument("--image-model-name", default=DEFAULT_CLIP_MODEL)
+        service.add_argument("--image-model-revision")
+        service.add_argument("--image-device", default="cpu")
+        service.add_argument("--maximum-upload-bytes", type=int, default=10 * 1024 * 1024)
+        service.add_argument("--maximum-pixel-count", type=int, default=20_000_000)
+        service.add_argument("--image-query-cache-size", type=int, default=64)
+        service.add_argument("--smoke-image-path", type=Path)
         if command == "retrieval-service-smoke":
             service.add_argument("--report-output", type=Path)
             service.add_argument("--metrics-output", type=Path)
         if command == "search-live-text":
             service.add_argument("--query", required=True)
+            service.add_argument("--top-k", type=int, default=5)
+        if command == "search-live-image":
+            service.add_argument("--image-path", required=True)
             service.add_argument("--top-k", type=int, default=5)
     return parser
 
@@ -342,13 +354,14 @@ def main(
     argv: list[str] | None = None,
     *,
     text_encoder_factory: Any = None,
+    image_encoder_factory: Any = None,
 ) -> int:
     args = build_parser().parse_args(argv)
     config = load_config()
     try:
         if args.command == "project-info":
             print(f"multimodal-retrieval-ops {__version__}")
-            print("Milestone: 8A (bounded arbitrary-text retrieval inference)")
+            print("Milestone: 8B (bounded arbitrary-image retrieval inference)")
             print("Runtime: lightweight base install; optional CPU/GPU CLIP extra")
         elif args.command == "generate-demo-manifest":
             output = args.output or config.manifest_path
@@ -850,6 +863,7 @@ def main(
             "retrieval-service-info",
             "retrieval-service-smoke",
             "search-live-text",
+            "search-live-image",
         }:
             from .api.settings import ServiceSettings
 
@@ -871,17 +885,33 @@ def main(
                 local_files_only=args.local_files_only,
                 maximum_text_length=args.maximum_text_length,
                 text_query_cache_size=args.text_query_cache_size,
+                enable_image_inference=(
+                    args.enable_image_inference or args.command == "search-live-image"
+                ),
+                image_model_name=args.image_model_name,
+                image_model_revision=args.image_model_revision,
+                image_device=args.image_device,
+                maximum_upload_bytes=args.maximum_upload_bytes,
+                maximum_pixel_count=args.maximum_pixel_count,
+                image_query_cache_size=args.image_query_cache_size,
+                smoke_image_path=(
+                    args.smoke_image_path or ServiceSettings.smoke_image_path
+                ),
             )
             if args.command == "retrieval-service-info":
                 from .api.artifacts import ServiceArtifactError, load_service_artifacts
 
-                if settings.enable_text_inference:
+                if settings.enable_text_inference or settings.enable_image_inference:
                     from fastapi.testclient import TestClient
 
                     from .api.app import create_app
 
                     with TestClient(
-                        create_app(settings, text_encoder_factory=text_encoder_factory)
+                        create_app(
+                            settings,
+                            text_encoder_factory=text_encoder_factory,
+                            image_encoder_factory=image_encoder_factory,
+                        )
                     ) as client:
                         information = client.get("/ready").json()
                         if information["retrieval_artifacts_ready"]:
@@ -928,7 +958,16 @@ def main(
                     detail = serving_dependency_message()
                     if args.command == "retrieval-service-smoke":
                         failure = failure_result(settings, "dependency_unavailable", detail)
-                        if settings.enable_text_inference:
+                        if settings.enable_image_inference:
+                            from .api.image_reporting import write_image_inference_reports
+
+                            write_image_inference_reports(
+                                failure,
+                                settings,
+                                args.report_output or config.image_inference_service_report_path,
+                                args.metrics_output or config.image_inference_service_metrics_path,
+                            )
+                        elif settings.enable_text_inference:
                             from .api.text_reporting import write_text_inference_reports
 
                             write_text_inference_reports(
@@ -950,7 +989,11 @@ def main(
                     from .api.app import create_app
 
                     uvicorn.run(
-                        create_app(settings, text_encoder_factory=text_encoder_factory),
+                        create_app(
+                            settings,
+                            text_encoder_factory=text_encoder_factory,
+                            image_encoder_factory=image_encoder_factory,
+                        ),
                         host=settings.host,
                         port=settings.port,
                     )
@@ -968,13 +1011,38 @@ def main(
                             json.dumps(live_result["response"], sort_keys=True)
                         )
                     print(json.dumps(live_result["response"], indent=2, sort_keys=True))
+                elif args.command == "search-live-image":
+                    from .api.smoke import run_live_image_query
+
+                    live_result = run_live_image_query(
+                        settings,
+                        args.image_path,
+                        args.top_k,
+                        image_encoder_factory=image_encoder_factory,
+                    )
+                    if live_result["status_code"] != 200:
+                        build_parser().error(
+                            json.dumps(live_result["response"], sort_keys=True)
+                        )
+                    print(json.dumps(live_result["response"], indent=2, sort_keys=True))
                 else:
                     from .api.smoke import run_service_smoke
 
                     result = run_service_smoke(
-                        settings, text_encoder_factory=text_encoder_factory
+                        settings,
+                        text_encoder_factory=text_encoder_factory,
+                        image_encoder_factory=image_encoder_factory,
                     )
-                    if settings.enable_text_inference:
+                    if settings.enable_image_inference:
+                        from .api.image_reporting import write_image_inference_reports
+
+                        write_image_inference_reports(
+                            result,
+                            settings,
+                            args.report_output or config.image_inference_service_report_path,
+                            args.metrics_output or config.image_inference_service_metrics_path,
+                        )
+                    elif settings.enable_text_inference:
                         from .api.text_reporting import write_text_inference_reports
 
                         write_text_inference_reports(
@@ -991,7 +1059,12 @@ def main(
                         )
                     if result.run_state != "success":
                         build_parser().error(result.detail)
-                    if settings.enable_text_inference:
+                    if settings.enable_image_inference:
+                        print(
+                            f"Image inference smoke passed for {result.backend}; "
+                            "requests=2, encoder-invocations=1, cache-hits=1"
+                        )
+                    elif settings.enable_text_inference:
                         print(
                             f"Text inference smoke passed for {result.backend}; "
                             "requests=2, encoder-invocations=1, cache-hits=1"

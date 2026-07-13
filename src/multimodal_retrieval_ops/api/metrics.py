@@ -35,8 +35,16 @@ class ServiceMetrics:
     text_query_cache_hits: int = 0
     text_query_cache_misses: int = 0
     text_inference_errors: int = 0
+    arbitrary_image_request_count: int = 0
+    image_encoder_invocation_count: int = 0
+    image_query_cache_hits: int = 0
+    image_query_cache_misses: int = 0
+    image_validation_errors: int = 0
+    image_inference_errors: int = 0
+    uploaded_byte_total: int = 0
     _latencies: list[float] = field(default_factory=list)
     _text_latencies: list[float] = field(default_factory=list)
+    _image_latencies: list[float] = field(default_factory=list)
     _lock: Lock = field(default_factory=Lock, repr=False)
 
     def record_request(self, is_error: bool) -> None:
@@ -89,10 +97,47 @@ class ServiceMetrics:
                     : len(self._text_latencies) - MAX_LATENCY_OBSERVATIONS
                 ]
 
+    def record_image_request(self) -> None:
+        with self._lock:
+            self.arbitrary_image_request_count += 1
+
+    def record_image_encoder_invocation(self) -> None:
+        with self._lock:
+            self.image_encoder_invocation_count += 1
+
+    def record_image_cache(self, hit: bool) -> None:
+        with self._lock:
+            if hit:
+                self.image_query_cache_hits += 1
+            else:
+                self.image_query_cache_misses += 1
+
+    def record_image_validation_error(self) -> None:
+        with self._lock:
+            self.image_validation_errors += 1
+
+    def record_image_inference_error(self) -> None:
+        with self._lock:
+            self.image_inference_errors += 1
+
+    def record_uploaded_bytes(self, byte_count: int) -> None:
+        with self._lock:
+            self.uploaded_byte_total += byte_count
+
+    def record_image_latency(self, latency_seconds: float, backend: str) -> None:
+        with self._lock:
+            self.requests_by_backend[backend] += 1
+            self._image_latencies.append(latency_seconds)
+            if len(self._image_latencies) > MAX_LATENCY_OBSERVATIONS:
+                del self._image_latencies[
+                    : len(self._image_latencies) - MAX_LATENCY_OBSERVATIONS
+                ]
+
     def snapshot(self) -> dict[str, object]:
         with self._lock:
             latencies = list(self._latencies)
             text_latencies = list(self._text_latencies)
+            image_latencies = list(self._image_latencies)
             return {
                 "total_requests": self.total_requests,
                 "retrieval_requests_by_direction": dict(self.retrieval_requests_by_direction),
@@ -115,4 +160,17 @@ class ServiceMetrics:
                 ),
                 "text_inference_latency_p50_seconds": _percentile(text_latencies, 0.50),
                 "text_inference_latency_p95_seconds": _percentile(text_latencies, 0.95),
+                "arbitrary_image_request_count": self.arbitrary_image_request_count,
+                "image_encoder_invocation_count": self.image_encoder_invocation_count,
+                "image_query_cache_hits": self.image_query_cache_hits,
+                "image_query_cache_misses": self.image_query_cache_misses,
+                "image_validation_errors": self.image_validation_errors,
+                "image_inference_errors": self.image_inference_errors,
+                "uploaded_byte_total": self.uploaded_byte_total,
+                "image_inference_latency_count": len(image_latencies),
+                "image_inference_latency_mean_seconds": (
+                    statistics.mean(image_latencies) if image_latencies else 0.0
+                ),
+                "image_inference_latency_p50_seconds": _percentile(image_latencies, 0.50),
+                "image_inference_latency_p95_seconds": _percentile(image_latencies, 0.95),
             }

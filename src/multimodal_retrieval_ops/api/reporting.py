@@ -21,7 +21,10 @@ REPORT_STATES = frozenset(
 
 
 def serving_dependencies_available() -> bool:
-    return all(importlib.util.find_spec(name) is not None for name in ("fastapi", "uvicorn", "httpx"))
+    return all(
+        importlib.util.find_spec(name) is not None
+        for name in ("fastapi", "uvicorn", "httpx", "multipart", "PIL")
+    )
 
 
 def serving_dependency_message() -> str:
@@ -44,6 +47,7 @@ class ServiceSmokeResult:
     observability: dict[str, Any] | None
     detail: str
     text_search_responses: list[dict[str, Any]] | None = None
+    image_search_responses: list[dict[str, Any]] | None = None
 
 
 def _format_result_ids(response: dict[str, Any] | None, key: str) -> str:

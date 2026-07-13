@@ -18,6 +18,15 @@ from ..faiss_flat import _as_normalized_matrix, search_cached_embedding
 from ..faiss_hnsw import search_hnsw_embedding
 from .artifacts import ServiceArtifactError, ServiceArtifacts, load_service_artifacts
 from .metrics import ServiceMetrics
+from .image_inference import (
+    ImageEmbeddingCache,
+    ImageEncoder,
+    ImageValidationError,
+    create_default_image_encoder,
+    decode_and_validate_image,
+    image_cache_identity,
+    parse_multipart_image,
+)
 from .schemas import (
     CaptionResult,
     CaptionRetrievalRequest,
@@ -26,9 +35,11 @@ from .schemas import (
     ImageResult,
     ImageRetrievalRequest,
     ImageRetrievalResponse,
+    ImageSearchResponse,
     IndexInfoResponse,
     MetricsResponse,
     ReadyResponse,
+    LiveCaptionResult,
     TextImageResult,
     TextSearchRequest,
     TextSearchResponse,
@@ -52,6 +63,10 @@ class ServiceRuntime:
     text_encoder_state: str = "disabled"
     text_encoder_reasons: tuple[str, ...] = ()
     query_cache: QueryEmbeddingCache | None = None
+    image_encoder: ImageEncoder | None = None
+    image_encoder_state: str = "disabled"
+    image_encoder_reasons: tuple[str, ...] = ()
+    image_query_cache: ImageEmbeddingCache | None = None
 
 
 def _require_ready(app: FastAPI) -> ServiceArtifacts:
@@ -67,6 +82,16 @@ def _require_text_ready(app: FastAPI) -> tuple[ServiceArtifacts, TextEncoder, Qu
     if runtime.text_encoder is None or runtime.query_cache is None:
         raise HTTPException(status_code=503, detail="arbitrary text inference is unavailable")
     return artifacts, runtime.text_encoder, runtime.query_cache
+
+
+def _require_image_ready(
+    app: FastAPI,
+) -> tuple[ServiceArtifacts, ImageEncoder, ImageEmbeddingCache]:
+    artifacts = _require_ready(app)
+    runtime: ServiceRuntime = app.state.runtime
+    if runtime.image_encoder is None or runtime.image_query_cache is None:
+        raise HTTPException(status_code=503, detail="arbitrary image inference is unavailable")
+    return artifacts, runtime.image_encoder, runtime.image_query_cache
 
 
 def _validate_top_k(
@@ -106,15 +131,13 @@ def _search(
 
 
 def _search_vector(
-    artifacts: ServiceArtifacts, vector: list[float], top_k: int
+    artifact: Any, vector: list[float], top_k: int
 ) -> list[dict[str, float | str]]:
-    query = _as_normalized_matrix(
-        [vector], artifacts.text_to_image.metadata.embedding_dimension
-    )
-    scores, indices = artifacts.text_to_image.index.search(query, top_k)
+    query = _as_normalized_matrix([vector], artifact.metadata.embedding_dimension)
+    scores, indices = artifact.index.search(query, top_k)
     return [
         {
-            "candidate_id": artifacts.text_to_image.metadata.candidate_ids[int(index)],
+            "candidate_id": artifact.metadata.candidate_ids[int(index)],
             "score": float(score),
         }
         for score, index in zip(scores[0], indices[0], strict=True)
@@ -157,9 +180,47 @@ def _validate_encoder_compatibility(
         )
 
 
+def _validate_image_encoder_compatibility(
+    settings: ServiceSettings, artifacts: ServiceArtifacts, encoder: ImageEncoder
+) -> None:
+    cache_metadata = artifacts.cache.metadata
+    configured_revision = settings.image_model_revision or "default"
+    if settings.image_model_name != cache_metadata.model_name:
+        raise ServiceArtifactError(
+            "artifact_incompatible", "image model name does not match the caption index"
+        )
+    if encoder.model_name != settings.image_model_name:
+        raise ServiceArtifactError(
+            "artifact_incompatible", "loaded image encoder model does not match configuration"
+        )
+    if configured_revision != cache_metadata.model_revision:
+        raise ServiceArtifactError(
+            "artifact_incompatible", "image model revision does not match the caption index"
+        )
+    if (encoder.model_revision or "default") != configured_revision:
+        raise ServiceArtifactError(
+            "artifact_incompatible", "loaded image encoder revision does not match configuration"
+        )
+    if encoder.backend_name != cache_metadata.backend_name:
+        raise ServiceArtifactError(
+            "artifact_incompatible", "image backend does not match cached caption embeddings"
+        )
+    if encoder.backend_version != cache_metadata.backend_version:
+        raise ServiceArtifactError(
+            "artifact_incompatible", "image backend version does not match caption embeddings"
+        )
+    if encoder.dimension != artifacts.image_to_text.metadata.embedding_dimension:
+        raise ServiceArtifactError(
+            "artifact_incompatible", "vision projection dimension does not match caption index"
+        )
+
+
 def create_app(
     settings: ServiceSettings,
     text_encoder_factory: Callable[[ServiceSettings], TextEncoder] | None = None,
+    image_encoder_factory: (
+        Callable[[ServiceSettings, TextEncoder | None], ImageEncoder] | None
+    ) = None,
 ) -> FastAPI:
     """Create an app without loading artifacts until its lifespan starts."""
     metrics = ServiceMetrics()
@@ -206,6 +267,40 @@ def create_app(
             except Exception:
                 runtime.text_encoder_state = "execution_failed"
                 runtime.text_encoder_reasons = ("text encoder initialization failed",)
+        if settings.enable_image_inference and runtime.artifacts is not None:
+            try:
+                image_factory = image_encoder_factory or create_default_image_encoder
+                image_encoder = image_factory(settings, runtime.text_encoder)
+                if image_encoder is not runtime.text_encoder:
+                    image_encoder.ensure_loaded()
+                _validate_image_encoder_compatibility(
+                    settings, runtime.artifacts, image_encoder
+                )
+                runtime.image_encoder = image_encoder
+                runtime.image_query_cache = ImageEmbeddingCache(
+                    settings.image_query_cache_size
+                )
+                runtime.image_encoder_state = "ready"
+                runtime.image_encoder_reasons = ()
+            except ServiceArtifactError as error:
+                runtime.image_encoder_state = error.state
+                runtime.image_encoder_reasons = (error.reason,)
+            except ClipModelUnavailableError:
+                runtime.image_encoder_state = "model_unavailable"
+                runtime.image_encoder_reasons = (
+                    "configured CLIP model weights are not available locally",
+                )
+            except ClipExecutionError:
+                runtime.image_encoder_state = "execution_failed"
+                runtime.image_encoder_reasons = ("CLIP image encoder initialization failed",)
+            except ClipBackendError:
+                runtime.image_encoder_state = "dependency_unavailable"
+                runtime.image_encoder_reasons = (
+                    "optional CLIP image dependencies are unavailable",
+                )
+            except Exception:
+                runtime.image_encoder_state = "execution_failed"
+                runtime.image_encoder_reasons = ("image encoder initialization failed",)
         yield
 
     app = FastAPI(title="Multimodal Retrieval Ops", version="1", lifespan=lifespan)
@@ -244,9 +339,10 @@ def create_app(
         runtime: ServiceRuntime = app.state.runtime
         artifacts_ready = runtime.artifacts is not None
         text_ready = runtime.text_encoder is not None
+        image_ready = runtime.image_encoder is not None
         ready_state = artifacts_ready and (
             not settings.enable_text_inference or text_ready
-        )
+        ) and (not settings.enable_image_inference or image_ready)
         return ReadyResponse(
             status="ready" if ready_state else "unready",
             backend=settings.backend,
@@ -255,7 +351,14 @@ def create_app(
             text_encoder_enabled=settings.enable_text_inference,
             text_encoder_ready=text_ready,
             text_encoder_state=runtime.text_encoder_state,
-            reasons=list(runtime.readiness_reasons + runtime.text_encoder_reasons),
+            image_encoder_enabled=settings.enable_image_inference,
+            image_encoder_ready=image_ready,
+            image_encoder_state=runtime.image_encoder_state,
+            reasons=list(
+                runtime.readiness_reasons
+                + runtime.text_encoder_reasons
+                + runtime.image_encoder_reasons
+            ),
         )
 
     @app.get("/index-info", response_model=IndexInfoResponse)
@@ -284,6 +387,18 @@ def create_app(
                 else None
             ),
             local_files_only=settings.local_files_only,
+            image_inference_enabled=settings.enable_image_inference,
+            image_encoder_ready=app.state.runtime.image_encoder is not None,
+            image_model_name=settings.image_model_name,
+            image_model_revision=settings.image_model_revision or "default",
+            vision_embedding_dimension=(
+                app.state.runtime.image_encoder.dimension
+                if app.state.runtime.image_encoder is not None
+                else None
+            ),
+            accepted_image_formats=list(settings.allowed_image_formats),
+            maximum_upload_bytes=settings.maximum_upload_bytes,
+            maximum_pixel_count=settings.maximum_pixel_count,
         )
 
     @app.post("/retrieve/images", response_model=ImageRetrievalResponse)
@@ -405,7 +520,7 @@ def create_app(
                     artifacts.text_to_image.metadata.embedding_dimension,
                 )
                 query_cache.put(cache_key, vector)
-            found = _search_vector(artifacts, vector, request.top_k)
+            found = _search_vector(artifacts.text_to_image, vector, request.top_k)
         except Exception:
             metrics.record_text_error()
             raise HTTPException(
@@ -426,6 +541,69 @@ def create_app(
                     split=artifacts.image_splits[str(item["candidate_id"])],
                     image_path=artifacts.safe_image_paths[str(item["candidate_id"])],
                     captions=artifacts.image_captions[str(item["candidate_id"])],
+                )
+                for rank, item in enumerate(found, 1)
+            ],
+        )
+
+    @app.post("/search/image", response_model=ImageSearchResponse)
+    async def search_image(request: Request) -> ImageSearchResponse:
+        metrics.record_image_request()
+        try:
+            artifacts, encoder, image_cache = _require_image_ready(app)
+        except HTTPException:
+            metrics.record_image_inference_error()
+            raise
+        try:
+            upload = await parse_multipart_image(request, settings.maximum_upload_bytes)
+            metrics.record_uploaded_bytes(len(upload.image_bytes))
+            _validate_top_k(
+                upload.top_k,
+                settings.maximum_top_k,
+                artifacts.image_to_text.metadata.candidate_count,
+                metrics,
+            )
+            image, _ = decode_and_validate_image(upload, settings)
+        except ImageValidationError as error:
+            metrics.record_image_validation_error()
+            raise HTTPException(status_code=422, detail=str(error)) from None
+        except HTTPException:
+            metrics.record_image_validation_error()
+            raise
+        identifier, cache_key = image_cache_identity(upload.image_bytes, encoder)
+        started = time.perf_counter()
+        vector = image_cache.get(cache_key)
+        cached_query = vector is not None
+        metrics.record_image_cache(cached_query)
+        try:
+            if vector is None:
+                metrics.record_image_encoder_invocation()
+                vector = normalize_vector(
+                    encoder.encode_image_object(image),
+                    artifacts.image_to_text.metadata.embedding_dimension,
+                )
+                image_cache.put(cache_key, vector)
+            found = _search_vector(artifacts.image_to_text, vector, upload.top_k)
+        except Exception:
+            metrics.record_image_inference_error()
+            raise HTTPException(
+                status_code=503, detail="arbitrary image inference execution failed"
+            ) from None
+        metrics.record_image_latency(time.perf_counter() - started, artifacts.backend)
+        return ImageSearchResponse(
+            backend=artifacts.backend,
+            model_name=encoder.model_name,
+            embedding_dimension=len(vector),
+            image_identifier=identifier,
+            cached_query=cached_query,
+            results=[
+                LiveCaptionResult(
+                    caption_id=str(item["candidate_id"]),
+                    target_image_id=artifacts.caption_targets[str(item["candidate_id"])],
+                    caption_text=artifacts.caption_text[str(item["candidate_id"])],
+                    score=float(item["score"]),
+                    rank=rank,
+                    split=artifacts.cache.metadata.split,
                 )
                 for rank, item in enumerate(found, 1)
             ],

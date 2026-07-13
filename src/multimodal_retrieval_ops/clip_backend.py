@@ -151,16 +151,26 @@ class ClipEmbeddingBackend:
                         images.append(image.convert("RGB").copy())
                 except Exception as error:
                     raise ClipExecutionError(f"could not decode image: {image_path}") from error
-            try:
-                inputs = self._processor(images=images, return_tensors="pt")
-                inputs = {name: value.to(self.device) for name, value in inputs.items()}
-                with self._torch.inference_mode():
-                    output = self._model.vision_model(**inputs)
-                    features = self._model.visual_projection(output.pooler_output)
-                embeddings.extend(self._normalize_batch(features))
-            except Exception as error:
-                raise ClipExecutionError("CLIP image embedding execution failed") from error
+            embeddings.extend(self.encode_image_objects(images))
         return embeddings
 
     def encode_image(self, image_path: str) -> list[float]:
         return self.encode_images([image_path])[0]
+
+    def encode_image_objects(self, images: list[Any]) -> list[list[float]]:
+        """Encode already-decoded Pillow images without filesystem access."""
+        if len(images) > 4:
+            raise ClipBackendError("CLIP image inference batch must not exceed four images")
+        self.ensure_loaded()
+        try:
+            inputs = self._processor(images=images, return_tensors="pt")
+            inputs = {name: value.to(self.device) for name, value in inputs.items()}
+            with self._torch.inference_mode():
+                output = self._model.vision_model(**inputs)
+                features = self._model.visual_projection(output.pooler_output)
+            return self._normalize_batch(features)
+        except Exception as error:
+            raise ClipExecutionError("CLIP image embedding execution failed") from error
+
+    def encode_image_object(self, image: Any) -> list[float]:
+        return self.encode_image_objects([image])[0]

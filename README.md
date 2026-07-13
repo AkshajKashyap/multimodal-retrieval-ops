@@ -394,3 +394,57 @@ HNSW is enabled explicitly with `--backend hnsw --ef-search 64`.
 CPU model startup and uncached queries may be slow. The cache and metrics are local to one process
 and reset at shutdown. Image uploads, image inference, fine-tuning, training, and reranking remain
 intentionally deferred.
+
+## Milestone 8B: bounded arbitrary image-to-text inference
+
+Install the CLIP, FAISS, and serving extras; multipart support and Pillow are included in the
+serving extra:
+
+```bash
+python -m pip install -e ".[dev,clip,faiss,serve]"
+```
+
+Arbitrary image inference is disabled by default. Enabling it requires the existing persisted
+official-test caption index with 5,000 candidates, its compatible embedding cache and manifest,
+and locally cached `openai/clip-vit-base-patch32` files. Startup validates that the model name,
+revision, backend, and vision projection dimension match those artifacts. It never downloads model
+files or rebuilds embeddings or indexes when `--local-files-only` is used, which is the default.
+
+Inspect readiness, run one bounded in-process smoke, or start the local service with:
+
+```bash
+multimodal-retrieval-ops retrieval-service-info \
+  --backend flat --enable-image-inference --local-files-only
+multimodal-retrieval-ops retrieval-service-smoke \
+  --backend flat --enable-image-inference --local-files-only
+multimodal-retrieval-ops serve-retrieval \
+  --backend flat --enable-image-inference --local-files-only
+```
+
+Submit a multipart image through the API:
+
+```bash
+curl -X POST http://127.0.0.1:8000/search/image \
+  -F 'image=@query.jpg;type=image/jpeg' \
+  -F 'top_k=5'
+```
+
+Or execute one local image query without binding a network port:
+
+```bash
+multimodal-retrieval-ops search-live-image \
+  --backend flat --image-path query.jpg --top-k 5 --local-files-only
+```
+
+JPEG, PNG, and WEBP are accepted after MIME and decoded-format validation. Defaults limit uploads
+to 10 MiB and decoded images to 20 million pixels; empty, oversized, corrupt, mismatched, and
+decompression-bomb inputs are rejected. Uploaded bytes are parsed and decoded in memory and are
+never stored. A bounded process-local LRU keyed by the image SHA-256 and model identity avoids a
+second vision pass for identical bytes. When text and image inference are both enabled with the
+same configuration, the text and vision towers share one loaded CLIP model object.
+
+Cached-ID retrieval, arbitrary text-to-image search, and arbitrary image-to-caption search can
+coexist. Optional HNSW caption search uses `--backend hnsw --ef-search 64`; FlatIP remains the
+default. CPU model startup and vision inference may be slow and memory-intensive. Caches and
+metrics are process-local. Fine-tuning, training, reranking, OCR, and image persistence remain
+deferred.

@@ -29,6 +29,17 @@ class ServiceSettings:
     local_files_only: bool = True
     maximum_text_length: int = 512
     text_query_cache_size: int = 128
+    enable_image_inference: bool = False
+    image_model_name: str = DEFAULT_CLIP_MODEL
+    image_model_revision: str | None = None
+    image_device: str = "cpu"
+    maximum_upload_bytes: int = 10 * 1024 * 1024
+    maximum_pixel_count: int = 20_000_000
+    allowed_image_formats: tuple[str, ...] = ("JPEG", "PNG", "WEBP")
+    image_query_cache_size: int = 64
+    smoke_image_path: Path = Path(
+        "data/raw/hf_flickr8k/images/test/test-000000.jpg"
+    )
 
     def validate(self) -> None:
         if self.backend not in ("flat", "hnsw"):
@@ -46,6 +57,17 @@ class ServiceSettings:
             raise ValueError("maximum_text_length must be positive")
         if not 1 <= self.text_query_cache_size <= 10000:
             raise ValueError("text_query_cache_size must be between 1 and 10000")
+        if not self.image_model_name.strip():
+            raise ValueError("image_model_name must be non-empty")
+        if self.maximum_upload_bytes <= 0:
+            raise ValueError("maximum_upload_bytes must be positive")
+        if self.maximum_pixel_count <= 0:
+            raise ValueError("maximum_pixel_count must be positive")
+        supported_formats = {"JPEG", "PNG", "WEBP"}
+        if not self.allowed_image_formats or not set(self.allowed_image_formats) <= supported_formats:
+            raise ValueError("allowed_image_formats must contain only JPEG, PNG, or WEBP")
+        if not 1 <= self.image_query_cache_size <= 10000:
+            raise ValueError("image_query_cache_size must be between 1 and 10000")
 
     @property
     def index_artifacts_path(self) -> Path:
