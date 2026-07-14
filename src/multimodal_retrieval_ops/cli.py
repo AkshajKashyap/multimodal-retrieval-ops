@@ -44,6 +44,17 @@ from .contrastive_adapter_reporting import (
     write_adapter_failure_reports,
     write_adapter_reports,
 )
+from .contrastive_adapter_diagnostics import (
+    AdapterDiagnosticError,
+    DiagnosticArtifactIncompatibleError,
+    DiagnosticArtifactUnavailableError,
+    DiagnosticCheckpointUnavailableError,
+    run_adapter_failure_analysis,
+)
+from .contrastive_adapter_diagnostic_reporting import (
+    write_diagnostic_failure_reports,
+    write_diagnostic_reports,
+)
 from .demo import generate_demo_manifest
 from .deterministic_image_encoder import DeterministicImageEncoder
 from .deterministic_text_encoder import DeterministicTextEncoder
@@ -423,6 +434,30 @@ def build_parser() -> argparse.ArgumentParser:
     adapter_info.add_argument(
         "--local-files-only", action=argparse.BooleanOptionalAction, default=True
     )
+    diagnostic = subparsers.add_parser(
+        "analyze-contrastive-adapter",
+        help="analyze the saved adapter failure on validation only",
+    )
+    diagnostic.add_argument("--train-cache", type=Path)
+    diagnostic.add_argument("--validation-cache", type=Path)
+    diagnostic.add_argument("--checkpoint", type=Path)
+    diagnostic.add_argument("--metadata", type=Path)
+    diagnostic.add_argument("--manifest", type=Path)
+    diagnostic.add_argument("--recorded-metrics", type=Path)
+    diagnostic.add_argument("--device", default="cpu")
+    diagnostic.add_argument("--report-output", type=Path)
+    diagnostic.add_argument("--metrics-output", type=Path)
+    diagnostic.add_argument("--memo-output", type=Path)
+    diagnostic_info = subparsers.add_parser(
+        "contrastive-adapter-diagnostics-info",
+        help="inspect read-only diagnostic artifact availability",
+    )
+    diagnostic_info.add_argument("--train-cache", type=Path)
+    diagnostic_info.add_argument("--validation-cache", type=Path)
+    diagnostic_info.add_argument("--checkpoint", type=Path)
+    diagnostic_info.add_argument("--metadata", type=Path)
+    diagnostic_info.add_argument("--manifest", type=Path)
+    diagnostic_info.add_argument("--recorded-metrics", type=Path)
     return parser
 
 
@@ -437,7 +472,7 @@ def main(
     try:
         if args.command == "project-info":
             print(f"multimodal-retrieval-ops {__version__}")
-            print("Milestone: 9A (bounded frozen-embedding contrastive adapters)")
+            print("Milestone: 9B (validation-only adapter failure analysis)")
             print("Runtime: lightweight base install; optional CPU/GPU CLIP extra")
         elif args.command == "generate-demo-manifest":
             output = args.output or config.manifest_path
@@ -928,6 +963,60 @@ def main(
                 "official_test_accessed": False,
             }
             print(json.dumps(information, indent=2, sort_keys=True))
+        elif args.command == "analyze-contrastive-adapter":
+            analysis = run_adapter_failure_analysis(
+                train_cache_path=args.train_cache or config.adapter_train_cache_path,
+                validation_cache_path=(
+                    args.validation_cache or config.adapter_validation_cache_path
+                ),
+                checkpoint_path=args.checkpoint or config.adapter_checkpoint_path,
+                checkpoint_metadata_path=(
+                    args.metadata or config.adapter_checkpoint_metadata_path
+                ),
+                manifest_path=args.manifest or config.hf_flickr8k_manifest_path,
+                recorded_metrics_path=args.recorded_metrics or config.adapter_metrics_path,
+                device=args.device,
+            )
+            write_diagnostic_reports(
+                analysis,
+                args.report_output or config.adapter_failure_report_path,
+                args.metrics_output or config.adapter_failure_metrics_path,
+                args.memo_output or config.adapter_decision_memo_path,
+            )
+            conclusions = ", ".join(item.conclusion for item in analysis.diagnoses)
+            print(
+                "Validation-only adapter diagnostics complete; "
+                f"decision=retain-zero-shot; conclusions={conclusions}"
+            )
+        elif args.command == "contrastive-adapter-diagnostics-info":
+            diagnostic_paths = {
+                "checkpoint": args.checkpoint or config.adapter_checkpoint_path,
+                "checkpoint_metadata": (
+                    args.metadata or config.adapter_checkpoint_metadata_path
+                ),
+                "manifest": args.manifest or config.hf_flickr8k_manifest_path,
+                "recorded_metrics": args.recorded_metrics or config.adapter_metrics_path,
+                "train_cache": args.train_cache or config.adapter_train_cache_path,
+                "validation_cache": (
+                    args.validation_cache or config.adapter_validation_cache_path
+                ),
+            }
+            print(
+                json.dumps(
+                    {
+                        "artifacts": {
+                            name: path.is_file() for name, path in diagnostic_paths.items()
+                        },
+                        "analysis_boundary": "validation-only",
+                        "clip_inference": False,
+                        "embedding_generation": False,
+                        "official_test_access": False,
+                        "retraining": False,
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
         elif args.command == "faiss-backend-info":
             available = faiss_available()
             message = f"FAISS CPU backend: {'available' if available else 'not installed'}"
@@ -1270,6 +1359,23 @@ def main(
                             f"Retrieval service smoke passed for {result.backend}; "
                             "caption-to-image=1, image-to-caption=1"
                         )
+    except AdapterDiagnosticError as error:
+        if isinstance(error, DiagnosticCheckpointUnavailableError):
+            state = "checkpoint_unavailable"
+        elif isinstance(error, DiagnosticArtifactUnavailableError):
+            state = "artifact_unavailable"
+        elif isinstance(error, DiagnosticArtifactIncompatibleError):
+            state = "artifact_incompatible"
+        else:
+            state = "execution_failed"
+        write_diagnostic_failure_reports(
+            state,
+            str(error),
+            config.adapter_failure_report_path,
+            config.adapter_failure_metrics_path,
+            config.adapter_decision_memo_path,
+        )
+        build_parser().error(str(error))
     except ContrastiveAdapterError as error:
         if isinstance(error, AdapterDependencyError):
             state = "dependency_unavailable"

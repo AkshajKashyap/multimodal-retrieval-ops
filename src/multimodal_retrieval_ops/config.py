@@ -76,6 +76,13 @@ class ProjectConfig:
     )
     adapter_metrics_path: Path = Path("reports/contrastive_adapter_metrics.json")
     adapter_promotion_path: Path = Path("reports/contrastive_adapter_promotion.md")
+    adapter_failure_report_path: Path = Path(
+        "reports/contrastive_adapter_failure_analysis.md"
+    )
+    adapter_failure_metrics_path: Path = Path(
+        "reports/contrastive_adapter_failure_metrics.json"
+    )
+    adapter_decision_memo_path: Path = Path("reports/contrastive_adapter_decision_memo.md")
 
 
 def load_config(path: Path | None = None) -> ProjectConfig:
@@ -272,5 +279,20 @@ def load_config(path: Path | None = None) -> ProjectConfig:
         ),
         adapter_promotion_path=Path(
             project.get("adapter_promotion_path", ProjectConfig.adapter_promotion_path)
+        ),
+        adapter_failure_report_path=Path(
+            project.get(
+                "adapter_failure_report_path", ProjectConfig.adapter_failure_report_path
+            )
+        ),
+        adapter_failure_metrics_path=Path(
+            project.get(
+                "adapter_failure_metrics_path", ProjectConfig.adapter_failure_metrics_path
+            )
+        ),
+        adapter_decision_memo_path=Path(
+            project.get(
+                "adapter_decision_memo_path", ProjectConfig.adapter_decision_memo_path
+            )
         ),
     )

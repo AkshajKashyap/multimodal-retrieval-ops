@@ -87,3 +87,9 @@ contrastive-adapter-train:
 
 contrastive-adapter-eval:
 	multimodal-retrieval-ops evaluate-contrastive-adapters --device cpu
+
+contrastive-adapter-diagnostics-check:
+	pytest -q tests/test_milestone_nine_b.py
+
+contrastive-adapter-diagnostics:
+	multimodal-retrieval-ops analyze-contrastive-adapter --device cpu

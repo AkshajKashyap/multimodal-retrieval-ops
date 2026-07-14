@@ -501,3 +501,38 @@ image and `0.9437` versus `0.9433` for image to text. Mean bidirectional MRR cha
 and text-to-image MRR exceeded the allowed regression. The conservative decision is therefore to
 retain zero-shot CLIP. These validation results selected the checkpoint and are not a final test
 benchmark.
+
+## Milestone 9B: validation-only adapter failure analysis
+
+Milestone 9B explains the rejected 9A adapter without running CLIP, regenerating embeddings,
+retraining, changing hyperparameters, or inspecting the official test split. It reads only the
+existing frozen train/validation caches, selected checkpoint, training history, tracked 9A metrics,
+and validation caption metadata:
+
+```bash
+multimodal-retrieval-ops contrastive-adapter-diagnostics-info
+multimodal-retrieval-ops analyze-contrastive-adapter
+# focused synthetic checks
+make contrastive-adapter-diagnostics-check
+```
+
+The analyzer first verifies model, revision, dimensions, subset and file fingerprints, selected
+IDs, image-caption relationships, architecture, and parameter count. Reproduced zero-shot and
+adapted metrics must match the tracked 9A values within `1e-6` or analysis stops without overwriting
+the earlier decision.
+
+On the existing 100-image/500-caption validation subset, text-to-image ranks improved for 47
+queries, were unchanged for 385, and worsened for 68. Image-to-text ranks improved for 7 images,
+were unchanged for 85, and worsened for 8. Mean adapted-minus-zero-shot rank change was `+0.032`
+for text to image and `-0.090` for image to text. Although mean margins increased, positive-margin
+coverage fell from `81%` to `78%` for text queries and from `92%` to `90%` for image queries.
+
+Original-to-adapted cosine similarity averaged `0.6858` for images and `0.6443` for text, showing
+more aggressive text movement. Training loss continued down after selected epoch 6 while all four
+later validation scores remained below the selected score. The supported diagnosis is likely
+overfitting, likely optimization imbalance between modalities, representation movement that was
+too aggressive, and insufficient improvement signal. These are bounded descriptive findings, not
+proof of causality.
+
+The decision remains **retain zero-shot CLIP**. No second configuration was trained, no serving
+index was changed, and the official test split remains untouched.
