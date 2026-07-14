@@ -40,6 +40,11 @@ class ServiceSettings:
     smoke_image_path: Path = Path(
         "data/raw/hf_flickr8k/images/test/test-000000.jpg"
     )
+    telemetry_enabled: bool = False
+    telemetry_path: Path = Path("logs/retrieval_telemetry.jsonl")
+    telemetry_max_bytes: int = 5 * 1024 * 1024
+    telemetry_backup_count: int = 2
+    telemetry_flush_each_event: bool = True
 
     def validate(self) -> None:
         if self.backend not in ("flat", "hnsw"):
@@ -68,6 +73,14 @@ class ServiceSettings:
             raise ValueError("allowed_image_formats must contain only JPEG, PNG, or WEBP")
         if not 1 <= self.image_query_cache_size <= 10000:
             raise ValueError("image_query_cache_size must be between 1 and 10000")
+        if self.telemetry_max_bytes <= 0:
+            raise ValueError("telemetry_max_bytes must be positive")
+        if self.telemetry_backup_count < 0:
+            raise ValueError("telemetry_backup_count must be non-negative")
+        if self.telemetry_path.name in {"", ".", ".."}:
+            raise ValueError("telemetry_path must name a file")
+        if self.telemetry_path.suffix.lower() != ".jsonl":
+            raise ValueError("telemetry_path must use the .jsonl suffix")
 
     @property
     def index_artifacts_path(self) -> Path:

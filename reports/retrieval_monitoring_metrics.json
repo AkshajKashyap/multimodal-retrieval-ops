@@ -1,0 +1,120 @@
+{
+  "cache": {
+    "cache_hit_count": 0,
+    "cache_hit_rate": null,
+    "cache_miss_count": 0,
+    "observation_count": 0
+  },
+  "health": {
+    "decision": "warning",
+    "threshold_results": {
+      "maximum_error_rate": {
+        "comparison": "maximum",
+        "observed": 0.2,
+        "passed": true,
+        "required": true,
+        "threshold": 0.25
+      },
+      "maximum_p95_latency_ms": {
+        "comparison": "maximum",
+        "observed": 3.151848000015889,
+        "passed": null,
+        "required": false,
+        "threshold": null
+      },
+      "maximum_readiness_failures": {
+        "comparison": "maximum",
+        "observed": 0,
+        "passed": true,
+        "required": true,
+        "threshold": 0
+      },
+      "minimum_labeled_mrr": {
+        "comparison": "minimum",
+        "observed": 0.5,
+        "passed": true,
+        "required": true,
+        "threshold": 0.5
+      },
+      "minimum_labeled_recall_at_10": {
+        "comparison": "minimum",
+        "observed": 0.5,
+        "passed": false,
+        "required": true,
+        "threshold": 0.8
+      }
+    },
+    "thresholds": {
+      "maximum_error_rate": 0.25,
+      "maximum_p95_latency_ms": null,
+      "maximum_readiness_failures": 0,
+      "minimum_labeled_mrr": 0.5,
+      "minimum_labeled_recall_at_10": 0.8
+    }
+  },
+  "known_label_quality": {
+    "labeled_query_count": 2,
+    "mean_recall_at_1": 0.0,
+    "mean_recall_at_10": 0.5,
+    "mean_recall_at_5": 0.5,
+    "mean_reciprocal_rank": 0.5,
+    "recall_at_10_observation_count": 2,
+    "recall_at_1_observation_count": 2,
+    "recall_at_5_observation_count": 2,
+    "reciprocal_rank_observation_count": 1
+  },
+  "latency": {
+    "maximum_ms": 3.151848000015889,
+    "mean_ms": 1.3730069999837724,
+    "median_ms": 0.8970899998530513,
+    "observation_count": 5,
+    "p50_ms": 0.8970899998530513,
+    "p95_ms": 3.151848000015889
+  },
+  "reliability": {
+    "error_category_counts": {
+      "unknown_cached_id": 1
+    },
+    "http_status_counts": {
+      "200": 4,
+      "404": 1
+    },
+    "invalid_event_record_count": 0,
+    "malformed_json_line_count": 0,
+    "overall_error_rate": 0.2,
+    "readiness_failure_count": 0,
+    "telemetry_parsing_error_count": 0,
+    "unsupported_schema_record_count": 0
+  },
+  "run_state": "success",
+  "schema_version": 1,
+  "score_confidence": {
+    "margin_observation_count": 2,
+    "mean_top1_score": 0.3281015604734421,
+    "mean_top1_top2_margin": 0.013835236430168152,
+    "median_top1_score": 0.3281015604734421,
+    "median_top1_top2_margin": 0.013835236430168152,
+    "non_positive_margin_rate": 0.0,
+    "observation_count": 2
+  },
+  "source_file_count": 1,
+  "traffic": {
+    "failed_request_count": 1,
+    "request_count_by_backend": {
+      "flat": 5
+    },
+    "request_count_by_endpoint": {
+      "cached_caption_to_image": 2,
+      "cached_image_to_caption": 1,
+      "health": 1,
+      "readiness": 1
+    },
+    "request_count_by_retrieval_direction": {
+      "caption_to_image": 2,
+      "image_to_caption": 1,
+      "operational": 2
+    },
+    "successful_request_count": 4,
+    "total_event_count": 5
+  }
+}

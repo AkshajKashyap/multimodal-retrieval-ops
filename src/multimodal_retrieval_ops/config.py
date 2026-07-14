@@ -63,6 +63,10 @@ class ProjectConfig:
     text_inference_service_metrics_path: Path = Path("reports/text_inference_service_metrics.json")
     image_inference_service_report_path: Path = Path("reports/image_inference_service_report.md")
     image_inference_service_metrics_path: Path = Path("reports/image_inference_service_metrics.json")
+    retrieval_telemetry_path: Path = Path("logs/retrieval_telemetry.jsonl")
+    retrieval_monitoring_report_path: Path = Path("reports/retrieval_monitoring_report.md")
+    retrieval_monitoring_metrics_path: Path = Path("reports/retrieval_monitoring_metrics.json")
+    retrieval_monitoring_decision_path: Path = Path("reports/retrieval_monitoring_decision.md")
     adapter_artifacts_path: Path = Path("artifacts/contrastive_adapters")
     adapter_train_cache_path: Path = Path(
         "artifacts/contrastive_adapters/train_embeddings.json"
@@ -264,6 +268,27 @@ def load_config(path: Path | None = None) -> ProjectConfig:
             project.get(
                 "image_inference_service_metrics_path",
                 ProjectConfig.image_inference_service_metrics_path,
+            )
+        ),
+        retrieval_telemetry_path=Path(
+            project.get("retrieval_telemetry_path", ProjectConfig.retrieval_telemetry_path)
+        ),
+        retrieval_monitoring_report_path=Path(
+            project.get(
+                "retrieval_monitoring_report_path",
+                ProjectConfig.retrieval_monitoring_report_path,
+            )
+        ),
+        retrieval_monitoring_metrics_path=Path(
+            project.get(
+                "retrieval_monitoring_metrics_path",
+                ProjectConfig.retrieval_monitoring_metrics_path,
+            )
+        ),
+        retrieval_monitoring_decision_path=Path(
+            project.get(
+                "retrieval_monitoring_decision_path",
+                ProjectConfig.retrieval_monitoring_decision_path,
             )
         ),
         adapter_artifacts_path=Path(

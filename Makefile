@@ -52,6 +52,15 @@ hnsw-reranking-check:
 hnsw-reranking-eval:
 	multimodal-retrieval-ops evaluate-hnsw-reranking --candidate-k 50 --ef-search 64
 
+retrieval-monitoring-check:
+	pytest -q tests/test_milestone_eleven_a.py
+
+retrieval-monitoring-smoke:
+	multimodal-retrieval-ops retrieval-telemetry-smoke --backend flat
+
+retrieval-monitoring-analyze:
+	multimodal-retrieval-ops analyze-retrieval-telemetry
+
 retrieval-service-check:
 	pytest -q tests/test_milestone_seven_c.py
 

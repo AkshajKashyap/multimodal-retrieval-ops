@@ -45,6 +45,15 @@ from .schemas import (
     TextSearchResponse,
 )
 from .settings import ServiceSettings
+from .telemetry import (
+    JsonlTelemetrySink,
+    cached_relevance_metrics,
+    make_retrieval_event,
+    model_identity_fingerprint,
+    safe_sha256,
+    score_summary,
+    unlabeled_relevance_metrics,
+)
 from .text_inference import (
     QueryEmbeddingCache,
     TextEncoder,
@@ -67,6 +76,22 @@ class ServiceRuntime:
     image_encoder_state: str = "disabled"
     image_encoder_reasons: tuple[str, ...] = ()
     image_query_cache: ImageEmbeddingCache | None = None
+
+
+_TELEMETRY_ENDPOINTS = {
+    "/health": ("health", "operational"),
+    "/ready": ("readiness", "operational"),
+    "/retrieve/images": ("cached_caption_to_image", "caption_to_image"),
+    "/retrieve/captions": ("cached_image_to_caption", "image_to_caption"),
+    "/search/text": ("arbitrary_text_to_image", "text_to_image"),
+    "/search/image": ("arbitrary_image_to_caption", "image_to_text"),
+}
+
+
+def _set_telemetry(request: Request, **values: Any) -> None:
+    context = getattr(request.state, "telemetry", {})
+    context.update(values)
+    request.state.telemetry = context
 
 
 def _require_ready(app: FastAPI) -> ServiceArtifacts:
@@ -95,18 +120,28 @@ def _require_image_ready(
 
 
 def _validate_top_k(
-    top_k: int, maximum_top_k: int, candidate_count: int, metrics: ServiceMetrics
+    top_k: int,
+    maximum_top_k: int,
+    candidate_count: int,
+    metrics: ServiceMetrics,
+    telemetry_request: Request | None = None,
 ) -> None:
     if top_k <= 0:
         metrics.record_invalid_top_k()
+        if telemetry_request is not None:
+            _set_telemetry(telemetry_request, error_category="invalid_top_k")
         raise HTTPException(status_code=422, detail="top_k must be positive")
     if top_k > maximum_top_k:
         metrics.record_invalid_top_k()
+        if telemetry_request is not None:
+            _set_telemetry(telemetry_request, error_category="invalid_top_k")
         raise HTTPException(
             status_code=422, detail=f"top_k must not exceed configured maximum {maximum_top_k}"
         )
     if top_k > candidate_count:
         metrics.record_invalid_top_k()
+        if telemetry_request is not None:
+            _set_telemetry(telemetry_request, error_category="invalid_top_k")
         raise HTTPException(
             status_code=422, detail=f"top_k must not exceed candidate count {candidate_count}"
         )
@@ -224,6 +259,20 @@ def create_app(
 ) -> FastAPI:
     """Create an app without loading artifacts until its lifespan starts."""
     metrics = ServiceMetrics()
+    metrics.configure_telemetry(settings.telemetry_enabled)
+    telemetry_sink = (
+        JsonlTelemetrySink(
+            settings.telemetry_path,
+            settings.telemetry_max_bytes,
+            settings.telemetry_backup_count,
+            flush_each_event=settings.telemetry_flush_each_event,
+            on_event=metrics.record_telemetry_event,
+            on_failure=metrics.record_telemetry_failure,
+            on_rotation=metrics.record_telemetry_rotation,
+        )
+        if settings.telemetry_enabled
+        else None
+    )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -309,6 +358,61 @@ def create_app(
     app.state.metrics = metrics
 
     @app.middleware("http")
+    async def record_telemetry(request: Request, call_next: Any):
+        monitored = _TELEMETRY_ENDPOINTS.get(request.url.path)
+        if telemetry_sink is None or monitored is None:
+            return await call_next(request)
+        endpoint, direction = monitored
+        request.state.telemetry = {
+            "endpoint": endpoint,
+            "retrieval_direction": direction,
+            **unlabeled_relevance_metrics(),
+        }
+        started = time.perf_counter()
+        response = None
+        try:
+            response = await call_next(request)
+            return response
+        finally:
+            context = dict(request.state.telemetry)
+            status_code = response.status_code if response is not None else 500
+            context.setdefault("http_status_code", status_code)
+            context.setdefault("request_status", "success" if status_code < 400 else "failed")
+            if status_code >= 400:
+                context.setdefault(
+                    "error_category",
+                    {
+                        404: "unknown_cached_id",
+                        422: "invalid_request",
+                        503: "service_unavailable",
+                    }.get(status_code, "internal_retrieval_failure"),
+                )
+            runtime: ServiceRuntime = app.state.runtime
+            artifacts = runtime.artifacts
+            if artifacts is not None:
+                metadata = artifacts.text_to_image.metadata
+                cache_metadata = artifacts.cache.metadata
+                context.setdefault("backend", artifacts.backend)
+                context.setdefault("embedding_dimension", metadata.embedding_dimension)
+                context.setdefault(
+                    "model_identity_fingerprint",
+                    model_identity_fingerprint(
+                        cache_metadata.backend_name,
+                        cache_metadata.model_name,
+                        cache_metadata.model_revision,
+                        cache_metadata.embedding_dimension,
+                    ),
+                )
+                context.setdefault("artifact_fingerprint", metadata.source_cache_fingerprint)
+            else:
+                context.setdefault("backend", settings.backend)
+            context["latency_ms"] = (time.perf_counter() - started) * 1000.0
+            try:
+                telemetry_sink.write(make_retrieval_event(**context))
+            except Exception:
+                metrics.record_telemetry_failure()
+
+    @app.middleware("http")
     async def count_requests(request: Request, call_next: Any):
         try:
             response = await call_next(request)
@@ -323,19 +427,32 @@ def create_app(
         request: Request, error: RequestValidationError
     ) -> JSONResponse:
         body = error.body
+        _set_telemetry(request, error_category="invalid_request")
         if request.url.path == "/search/text":
             metrics.record_text_request()
             metrics.record_text_error()
+            if isinstance(body, dict) and isinstance(body.get("query"), str):
+                normalized = " ".join(body["query"].split()).casefold()
+                _set_telemetry(request, safe_query_hash=safe_sha256(normalized))
+        elif request.url.path == "/retrieve/images" and isinstance(body, dict):
+            identifier = body.get("caption_id")
+            if isinstance(identifier, str):
+                _set_telemetry(request, safe_query_hash=safe_sha256(identifier))
+        elif request.url.path == "/retrieve/captions" and isinstance(body, dict):
+            identifier = body.get("image_id")
+            if isinstance(identifier, str):
+                _set_telemetry(request, safe_query_hash=safe_sha256(identifier))
         if isinstance(body, dict) and "top_k" in body:
             metrics.record_invalid_top_k()
+            _set_telemetry(request, error_category="invalid_top_k")
         return JSONResponse(status_code=422, content={"detail": error.errors()})
 
     @app.get("/health", response_model=HealthResponse)
-    async def health() -> HealthResponse:
+    async def health(request: Request) -> HealthResponse:
         return HealthResponse(status="alive")
 
     @app.get("/ready", response_model=ReadyResponse)
-    async def ready() -> ReadyResponse:
+    async def ready(request: Request) -> ReadyResponse:
         runtime: ServiceRuntime = app.state.runtime
         artifacts_ready = runtime.artifacts is not None
         text_ready = runtime.text_encoder is not None
@@ -343,6 +460,12 @@ def create_app(
         ready_state = artifacts_ready and (
             not settings.enable_text_inference or text_ready
         ) and (not settings.enable_image_inference or image_ready)
+        if not ready_state:
+            _set_telemetry(
+                request,
+                request_status="failed",
+                error_category="readiness_failure",
+            )
         return ReadyResponse(
             status="ready" if ready_state else "unready",
             backend=settings.backend,
@@ -402,28 +525,49 @@ def create_app(
         )
 
     @app.post("/retrieve/images", response_model=ImageRetrievalResponse)
-    async def retrieve_images(request: ImageRetrievalRequest) -> ImageRetrievalResponse:
+    async def retrieve_images(
+        request: ImageRetrievalRequest, http_request: Request
+    ) -> ImageRetrievalResponse:
+        _set_telemetry(
+            http_request,
+            top_k=request.top_k if request.top_k > 0 else None,
+            safe_query_hash=safe_sha256(request.caption_id),
+        )
         artifacts = _require_ready(app)
         _validate_top_k(
             request.top_k,
             settings.maximum_top_k,
             artifacts.text_to_image.metadata.candidate_count,
             metrics,
+            http_request,
         )
         if request.caption_id not in artifacts.cache.caption_embeddings:
             metrics.record_unknown_query()
+            _set_telemetry(http_request, error_category="unknown_cached_id")
             raise HTTPException(status_code=404, detail="unknown caption_id")
         started = time.perf_counter()
-        found = _search(
-            artifacts,
-            request.caption_id,
-            artifacts.cache.caption_embeddings,
-            artifacts.text_to_image,
-            request.top_k,
-        )
+        try:
+            found = _search(
+                artifacts,
+                request.caption_id,
+                artifacts.cache.caption_embeddings,
+                artifacts.text_to_image,
+                request.top_k,
+            )
+        except Exception:
+            _set_telemetry(http_request, error_category="internal_retrieval_failure")
+            raise
         elapsed = time.perf_counter() - started
         metrics.record_retrieval("caption_to_image", artifacts.backend, elapsed)
         target = artifacts.caption_targets.get(request.caption_id)
+        relevant = [str(item["candidate_id"]) == target for item in found]
+        _set_telemetry(
+            http_request,
+            result_count=len(found),
+            candidate_count=artifacts.text_to_image.metadata.candidate_count,
+            **score_summary([float(item["score"]) for item in found]),
+            **cached_relevance_metrics(relevant, request.top_k),
+        )
         return ImageRetrievalResponse(
             query_caption_id=request.caption_id,
             backend=artifacts.backend,
@@ -439,25 +583,38 @@ def create_app(
         )
 
     @app.post("/retrieve/captions", response_model=CaptionRetrievalResponse)
-    async def retrieve_captions(request: CaptionRetrievalRequest) -> CaptionRetrievalResponse:
+    async def retrieve_captions(
+        request: CaptionRetrievalRequest, http_request: Request
+    ) -> CaptionRetrievalResponse:
+        _set_telemetry(
+            http_request,
+            top_k=request.top_k if request.top_k > 0 else None,
+            safe_query_hash=safe_sha256(request.image_id),
+        )
         artifacts = _require_ready(app)
         _validate_top_k(
             request.top_k,
             settings.maximum_top_k,
             artifacts.image_to_text.metadata.candidate_count,
             metrics,
+            http_request,
         )
         if request.image_id not in artifacts.cache.image_embeddings:
             metrics.record_unknown_query()
+            _set_telemetry(http_request, error_category="unknown_cached_id")
             raise HTTPException(status_code=404, detail="unknown image_id")
         started = time.perf_counter()
-        found = _search(
-            artifacts,
-            request.image_id,
-            artifacts.cache.image_embeddings,
-            artifacts.image_to_text,
-            request.top_k,
-        )
+        try:
+            found = _search(
+                artifacts,
+                request.image_id,
+                artifacts.cache.image_embeddings,
+                artifacts.image_to_text,
+                request.top_k,
+            )
+        except Exception:
+            _set_telemetry(http_request, error_category="internal_retrieval_failure")
+            raise
         elapsed = time.perf_counter() - started
         metrics.record_retrieval("image_to_caption", artifacts.backend, elapsed)
         results = []
@@ -474,6 +631,19 @@ def create_app(
                     relevant_target=target_image_id == request.image_id,
                 )
             )
+        _set_telemetry(
+            http_request,
+            result_count=len(found),
+            candidate_count=artifacts.image_to_text.metadata.candidate_count,
+            **score_summary([float(item["score"]) for item in found]),
+            **cached_relevance_metrics(
+                [
+                    artifacts.caption_targets[str(item["candidate_id"])] == request.image_id
+                    for item in found
+                ],
+                request.top_k,
+            ),
+        )
         return CaptionRetrievalResponse(
             query_image_id=request.image_id,
             backend=artifacts.backend,
@@ -485,8 +655,16 @@ def create_app(
         return MetricsResponse(**metrics.snapshot())
 
     @app.post("/search/text", response_model=TextSearchResponse)
-    async def search_text(request: TextSearchRequest) -> TextSearchResponse:
+    async def search_text(
+        request: TextSearchRequest, http_request: Request
+    ) -> TextSearchResponse:
         metrics.record_text_request()
+        normalized_identity = " ".join(request.query.split()).casefold()
+        _set_telemetry(
+            http_request,
+            top_k=request.top_k if request.top_k > 0 else None,
+            safe_query_hash=safe_sha256(normalized_identity),
+        )
         try:
             artifacts, encoder, query_cache = _require_text_ready(app)
             _validate_top_k(
@@ -494,16 +672,20 @@ def create_app(
                 settings.maximum_top_k,
                 artifacts.text_to_image.metadata.candidate_count,
                 metrics,
+                http_request,
             )
         except HTTPException:
             metrics.record_text_error()
+            _set_telemetry(http_request, error_category="optional_encoder_unavailable")
             raise
         display_query, cache_key = normalized_query(request.query)
         if not display_query:
             metrics.record_text_error()
+            _set_telemetry(http_request, error_category="invalid_request")
             raise HTTPException(status_code=422, detail="query must be non-empty")
         if len(display_query) > settings.maximum_text_length:
             metrics.record_text_error()
+            _set_telemetry(http_request, error_category="invalid_request")
             raise HTTPException(
                 status_code=422,
                 detail=f"query must not exceed {settings.maximum_text_length} characters",
@@ -512,6 +694,7 @@ def create_app(
         vector = query_cache.get(cache_key)
         cached_query = vector is not None
         metrics.record_text_cache(cached_query)
+        _set_telemetry(http_request, cache_hit=cached_query)
         try:
             if vector is None:
                 metrics.record_text_encoder_invocation()
@@ -523,10 +706,17 @@ def create_app(
             found = _search_vector(artifacts.text_to_image, vector, request.top_k)
         except Exception:
             metrics.record_text_error()
+            _set_telemetry(http_request, error_category="internal_retrieval_failure")
             raise HTTPException(
                 status_code=503, detail="arbitrary text inference execution failed"
             ) from None
         metrics.record_text_latency(time.perf_counter() - started, artifacts.backend)
+        _set_telemetry(
+            http_request,
+            result_count=len(found),
+            candidate_count=artifacts.text_to_image.metadata.candidate_count,
+            **score_summary([float(item["score"]) for item in found]),
+        )
         return TextSearchResponse(
             query=display_query,
             backend=artifacts.backend,
@@ -553,28 +743,38 @@ def create_app(
             artifacts, encoder, image_cache = _require_image_ready(app)
         except HTTPException:
             metrics.record_image_inference_error()
+            _set_telemetry(request, error_category="optional_encoder_unavailable")
             raise
         try:
             upload = await parse_multipart_image(request, settings.maximum_upload_bytes)
             metrics.record_uploaded_bytes(len(upload.image_bytes))
+            _set_telemetry(
+                request,
+                top_k=upload.top_k if upload.top_k > 0 else None,
+                safe_query_hash=safe_sha256(upload.image_bytes),
+            )
             _validate_top_k(
                 upload.top_k,
                 settings.maximum_top_k,
                 artifacts.image_to_text.metadata.candidate_count,
                 metrics,
+                request,
             )
             image, _ = decode_and_validate_image(upload, settings)
         except ImageValidationError as error:
             metrics.record_image_validation_error()
+            _set_telemetry(request, error_category="invalid_image_upload")
             raise HTTPException(status_code=422, detail=str(error)) from None
         except HTTPException:
             metrics.record_image_validation_error()
+            _set_telemetry(request, error_category="invalid_top_k")
             raise
         identifier, cache_key = image_cache_identity(upload.image_bytes, encoder)
         started = time.perf_counter()
         vector = image_cache.get(cache_key)
         cached_query = vector is not None
         metrics.record_image_cache(cached_query)
+        _set_telemetry(request, cache_hit=cached_query)
         try:
             if vector is None:
                 metrics.record_image_encoder_invocation()
@@ -586,10 +786,17 @@ def create_app(
             found = _search_vector(artifacts.image_to_text, vector, upload.top_k)
         except Exception:
             metrics.record_image_inference_error()
+            _set_telemetry(request, error_category="internal_retrieval_failure")
             raise HTTPException(
                 status_code=503, detail="arbitrary image inference execution failed"
             ) from None
         metrics.record_image_latency(time.perf_counter() - started, artifacts.backend)
+        _set_telemetry(
+            request,
+            result_count=len(found),
+            candidate_count=artifacts.image_to_text.metadata.candidate_count,
+            **score_summary([float(item["score"]) for item in found]),
+        )
         return ImageSearchResponse(
             backend=artifacts.backend,
             model_name=encoder.model_name,

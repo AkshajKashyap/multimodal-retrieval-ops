@@ -568,3 +568,46 @@ it is not a new model-quality estimate. The rejected contrastive adapters are ne
 and no CLIP inference, embedding generation, training, index rebuilding, API, or serving changes are
 part of this milestone. Timing is machine-specific, and reranking may not improve latency at
 Flickr8k scale.
+
+## Milestone 11A: privacy-safe retrieval monitoring
+
+Milestone 11A adds optional versioned JSONL telemetry to the existing retrieval service and a
+standard-library offline analyzer. Telemetry is disabled by default and does not alter retrieval
+ranking, indexes, model behavior, or existing response contracts. No external observability service,
+database, collector, or persistent server is required.
+
+Enable bounded local telemetry on an existing service command with:
+
+```bash
+multimodal-retrieval-ops serve-retrieval \
+  --backend flat \
+  --enable-telemetry \
+  --telemetry-path logs/retrieval_telemetry.jsonl \
+  --telemetry-max-bytes 5242880 \
+  --telemetry-backup-count 2
+```
+
+The sink rotates before the configured byte limit is exceeded, keeps at most the configured number
+of siblings, and flushes each event by default. Write failures never fail retrieval requests and are
+counted in process-local `/metrics`. Runtime JSONL files and rotations are ignored by Git.
+
+Telemetry stores only derived operational fields and SHA-256 query identities. It intentionally
+excludes raw arbitrary text, caption text, image bytes, uploaded filenames, absolute paths, request
+and authentication headers, model-cache paths, stack traces, and complete ranked payloads. Inspect,
+smoke, and analyze it without binding a network port:
+
+```bash
+multimodal-retrieval-ops retrieval-telemetry-info
+multimodal-retrieval-ops retrieval-telemetry-smoke --backend flat
+multimodal-retrieval-ops analyze-retrieval-telemetry
+```
+
+Default health thresholds allow at most a `0.25` error rate and zero readiness failures, require
+labeled Recall@10 of at least `0.80` and labeled MRR of at least `0.50`, and leave p95 latency
+unbounded unless configured. A window is `insufficient_data` when a required observation is absent.
+Known-label quality is computed only for cached-ID queries with existing manifest relevance;
+arbitrary text and uploaded-image queries remain explicitly unlabeled.
+
+Monitoring is process-local, single-instance, and single-window. Local rotation is not durable
+multi-instance observability, and score margins are operational signals rather than calibrated model
+confidence. This milestone does not change retrieval rankings or serving endpoints.

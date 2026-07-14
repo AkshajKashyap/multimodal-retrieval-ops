@@ -132,6 +132,15 @@ from .multimodal_reporting import write_multimodal_reports
 from .reporting import write_manifest_report
 from .evaluation import evaluate_index
 from .retrieval_reporting import write_retrieval_reports
+from .retrieval_monitoring import (
+    HealthThresholds,
+    RetrievalMonitoringError,
+    TelemetryUnavailableError,
+    analyze_events,
+    read_telemetry,
+    write_monitoring_failure,
+    write_monitoring_outputs,
+)
 from .splitting import assign_splits
 
 
@@ -408,6 +417,15 @@ def build_parser() -> argparse.ArgumentParser:
         service.add_argument("--maximum-pixel-count", type=int, default=20_000_000)
         service.add_argument("--image-query-cache-size", type=int, default=64)
         service.add_argument("--smoke-image-path", type=Path)
+        service.add_argument("--enable-telemetry", action="store_true")
+        service.add_argument("--telemetry-path", type=Path)
+        service.add_argument("--telemetry-max-bytes", type=int, default=5 * 1024 * 1024)
+        service.add_argument("--telemetry-backup-count", type=int, default=2)
+        service.add_argument(
+            "--telemetry-flush-each-event",
+            action=argparse.BooleanOptionalAction,
+            default=True,
+        )
         if command == "retrieval-service-smoke":
             service.add_argument("--report-output", type=Path)
             service.add_argument("--metrics-output", type=Path)
@@ -417,6 +435,42 @@ def build_parser() -> argparse.ArgumentParser:
         if command == "search-live-image":
             service.add_argument("--image-path", required=True)
             service.add_argument("--top-k", type=int, default=5)
+    telemetry_info = subparsers.add_parser(
+        "retrieval-telemetry-info", help="inspect local telemetry configuration"
+    )
+    telemetry_info.add_argument("--enabled", action="store_true")
+    telemetry_info.add_argument("--telemetry-path", type=Path)
+    telemetry_info.add_argument("--telemetry-max-bytes", type=int, default=5 * 1024 * 1024)
+    telemetry_info.add_argument("--telemetry-backup-count", type=int, default=2)
+    telemetry_info.add_argument(
+        "--telemetry-flush-each-event",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
+    telemetry_analyze = subparsers.add_parser(
+        "analyze-retrieval-telemetry", help="analyze local retrieval telemetry offline"
+    )
+    telemetry_analyze.add_argument("--telemetry-path", type=Path)
+    telemetry_analyze.add_argument("--include-rotated", action="store_true")
+    telemetry_analyze.add_argument("--maximum-error-rate", type=float, default=0.25)
+    telemetry_analyze.add_argument("--maximum-readiness-failures", type=int, default=0)
+    telemetry_analyze.add_argument("--maximum-p95-latency-ms", type=float)
+    telemetry_analyze.add_argument("--minimum-labeled-recall-at-10", type=float, default=0.80)
+    telemetry_analyze.add_argument("--minimum-labeled-mrr", type=float, default=0.50)
+    telemetry_analyze.add_argument("--report-output", type=Path)
+    telemetry_analyze.add_argument("--metrics-output", type=Path)
+    telemetry_analyze.add_argument("--decision-output", type=Path)
+    telemetry_smoke = subparsers.add_parser(
+        "retrieval-telemetry-smoke", help="run one in-process cached-ID telemetry smoke"
+    )
+    telemetry_smoke.add_argument("--backend", choices=("flat", "hnsw"), default="flat")
+    telemetry_smoke.add_argument("--artifact-root", type=Path, default=Path("artifacts"))
+    telemetry_smoke.add_argument("--embedding-cache", type=Path)
+    telemetry_smoke.add_argument("--manifest", type=Path)
+    telemetry_smoke.add_argument("--ef-search", type=int, choices=ALLOWED_EF_SEARCH, default=64)
+    telemetry_smoke.add_argument("--telemetry-path", type=Path)
+    telemetry_smoke.add_argument("--telemetry-max-bytes", type=int, default=5 * 1024 * 1024)
+    telemetry_smoke.add_argument("--telemetry-backup-count", type=int, default=2)
     adapter_prepare = subparsers.add_parser(
         "prepare-adapter-embeddings",
         help="cache bounded frozen train and validation CLIP embeddings",
@@ -512,7 +566,7 @@ def main(
     try:
         if args.command == "project-info":
             print(f"multimodal-retrieval-ops {__version__}")
-            print("Milestone: 9B (validation-only adapter failure analysis)")
+            print("Milestone: 11A (privacy-safe retrieval telemetry and offline monitoring)")
             print("Runtime: lightweight base install; optional CPU/GPU CLIP extra")
         elif args.command == "generate-demo-manifest":
             output = args.output or config.manifest_path
@@ -1249,6 +1303,75 @@ def main(
                     k=args.k,
                 )
             print(json.dumps(results, indent=2, sort_keys=True))
+        elif args.command == "retrieval-telemetry-info":
+            from .api.settings import ServiceSettings
+
+            telemetry_path = args.telemetry_path or config.retrieval_telemetry_path
+            settings = ServiceSettings(
+                telemetry_enabled=args.enabled,
+                telemetry_path=telemetry_path,
+                telemetry_max_bytes=args.telemetry_max_bytes,
+                telemetry_backup_count=args.telemetry_backup_count,
+                telemetry_flush_each_event=args.telemetry_flush_each_event,
+            )
+            settings.validate()
+            print(
+                json.dumps(
+                    {
+                        "backup_count": settings.telemetry_backup_count,
+                        "enabled": settings.telemetry_enabled,
+                        "flush_each_event": settings.telemetry_flush_each_event,
+                        "maximum_bytes": settings.telemetry_max_bytes,
+                        "path_name": settings.telemetry_path.name,
+                        "runtime_file_exists": settings.telemetry_path.is_file(),
+                        "schema_version": 1,
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+        elif args.command == "retrieval-telemetry-smoke":
+            from .api.settings import ServiceSettings
+            from .api.telemetry_smoke import run_telemetry_smoke
+
+            settings = ServiceSettings(
+                backend=args.backend,
+                artifact_root=args.artifact_root,
+                embedding_cache_path=args.embedding_cache or config.hf_test_cache_path,
+                manifest_path=args.manifest or config.hf_flickr8k_manifest_path,
+                ef_search=args.ef_search,
+                telemetry_enabled=True,
+                telemetry_path=args.telemetry_path or config.retrieval_telemetry_path,
+                telemetry_max_bytes=args.telemetry_max_bytes,
+                telemetry_backup_count=args.telemetry_backup_count,
+                telemetry_flush_each_event=True,
+            )
+            result = run_telemetry_smoke(settings)
+            print(json.dumps(result, indent=2, sort_keys=True))
+        elif args.command == "analyze-retrieval-telemetry":
+            thresholds = HealthThresholds(
+                maximum_error_rate=args.maximum_error_rate,
+                maximum_readiness_failures=args.maximum_readiness_failures,
+                maximum_p95_latency_ms=args.maximum_p95_latency_ms,
+                minimum_labeled_recall_at_10=args.minimum_labeled_recall_at_10,
+                minimum_labeled_mrr=args.minimum_labeled_mrr,
+            )
+            read_result = read_telemetry(
+                args.telemetry_path or config.retrieval_telemetry_path,
+                include_rotated=args.include_rotated,
+            )
+            summary = analyze_events(read_result, thresholds)
+            write_monitoring_outputs(
+                summary,
+                args.report_output or config.retrieval_monitoring_report_path,
+                args.metrics_output or config.retrieval_monitoring_metrics_path,
+                args.decision_output or config.retrieval_monitoring_decision_path,
+            )
+            print(
+                "Retrieval telemetry analysis complete; "
+                f"events={summary['traffic']['total_event_count']}, "
+                f"health={summary['health']['decision']}"
+            )
         elif args.command in {
             "serve-retrieval",
             "retrieval-service-info",
@@ -1288,6 +1411,11 @@ def main(
                 smoke_image_path=(
                     args.smoke_image_path or ServiceSettings.smoke_image_path
                 ),
+                telemetry_enabled=args.enable_telemetry,
+                telemetry_path=args.telemetry_path or config.retrieval_telemetry_path,
+                telemetry_max_bytes=args.telemetry_max_bytes,
+                telemetry_backup_count=args.telemetry_backup_count,
+                telemetry_flush_each_event=args.telemetry_flush_each_event,
             )
             if args.command == "retrieval-service-info":
                 from .api.artifacts import ServiceArtifactError, load_service_artifacts
@@ -1595,6 +1723,27 @@ def main(
                 config.hf_integration_metrics_path if integration else config.hf_test_metrics_path,
                 hf_state,
                 str(error),
+            )
+        build_parser().error(str(error))
+    except RetrievalMonitoringError as error:
+        if isinstance(error, TelemetryUnavailableError):
+            state = "telemetry_unavailable"
+        elif args.command == "retrieval-telemetry-smoke" and "artifacts" in str(error):
+            state = "artifact_unavailable"
+        elif args.command == "analyze-retrieval-telemetry":
+            state = "telemetry_invalid"
+        else:
+            state = "execution_failed"
+        if args.command in {
+            "retrieval-telemetry-smoke",
+            "analyze-retrieval-telemetry",
+        }:
+            write_monitoring_failure(
+                state,
+                str(error),
+                config.retrieval_monitoring_report_path,
+                config.retrieval_monitoring_metrics_path,
+                config.retrieval_monitoring_decision_path,
             )
         build_parser().error(str(error))
     except (ManifestValidationError, ValueError) as error:

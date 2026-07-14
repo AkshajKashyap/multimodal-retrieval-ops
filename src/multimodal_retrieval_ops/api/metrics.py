@@ -42,6 +42,10 @@ class ServiceMetrics:
     image_validation_errors: int = 0
     image_inference_errors: int = 0
     uploaded_byte_total: int = 0
+    telemetry_enabled: bool = False
+    telemetry_event_count: int = 0
+    telemetry_write_failure_count: int = 0
+    telemetry_rotation_count: int = 0
     _latencies: list[float] = field(default_factory=list)
     _text_latencies: list[float] = field(default_factory=list)
     _image_latencies: list[float] = field(default_factory=list)
@@ -133,6 +137,22 @@ class ServiceMetrics:
                     : len(self._image_latencies) - MAX_LATENCY_OBSERVATIONS
                 ]
 
+    def configure_telemetry(self, enabled: bool) -> None:
+        with self._lock:
+            self.telemetry_enabled = enabled
+
+    def record_telemetry_event(self) -> None:
+        with self._lock:
+            self.telemetry_event_count += 1
+
+    def record_telemetry_failure(self) -> None:
+        with self._lock:
+            self.telemetry_write_failure_count += 1
+
+    def record_telemetry_rotation(self) -> None:
+        with self._lock:
+            self.telemetry_rotation_count += 1
+
     def snapshot(self) -> dict[str, object]:
         with self._lock:
             latencies = list(self._latencies)
@@ -173,4 +193,8 @@ class ServiceMetrics:
                 ),
                 "image_inference_latency_p50_seconds": _percentile(image_latencies, 0.50),
                 "image_inference_latency_p95_seconds": _percentile(image_latencies, 0.95),
+                "telemetry_enabled": self.telemetry_enabled,
+                "telemetry_event_count": self.telemetry_event_count,
+                "telemetry_write_failure_count": self.telemetry_write_failure_count,
+                "telemetry_rotation_count": self.telemetry_rotation_count,
             }

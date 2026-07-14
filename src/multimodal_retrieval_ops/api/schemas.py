@@ -159,3 +159,7 @@ class MetricsResponse(BaseModel):
     image_inference_latency_mean_seconds: float
     image_inference_latency_p50_seconds: float
     image_inference_latency_p95_seconds: float
+    telemetry_enabled: bool
+    telemetry_event_count: int
+    telemetry_write_failure_count: int
+    telemetry_rotation_count: int
