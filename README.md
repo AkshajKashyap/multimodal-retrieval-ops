@@ -1,12 +1,70 @@
 # Multimodal Retrieval Ops
 
-Production-style image-text retrieval system with CLIP-style embeddings, contrastive fine-tuning, FAISS search, reranking, evaluation, FastAPI serving, and monitoring.
+An artifact-first image-text retrieval reference system: it ingests multi-caption datasets,
+evaluates zero-shot CLIP in both directions, validates exact and approximate FAISS search, serves
+persisted indexes through FastAPI, and monitors retrieval without retaining raw queries. The
+repository demonstrates a local, reproducible system—not an internet-scale production deployment.
 
-## Goal
+## At a glance
 
-Build an end-to-end multimodal retrieval system:
+- Schema-v2 image/caption relationships and official-split leakage controls
+- Optional Hugging Face CLIP inference with compatible embedding caches
+- Exact FlatIP correctness reference plus optional HNSW search
+- Cached-ID and bounded arbitrary-query FastAPI paths
+- Privacy-safe JSONL telemetry and minimum-sample health decisions
+- Explicit experimental decisions: zero-shot CLIP retained; adapters and reranking rejected
 
-data ingestion -> embedding generation -> contrastive fine-tuning -> vector index -> retrieval evaluation -> API serving -> telemetry -> monitoring.
+```mermaid
+flowchart LR
+  A[Manifest v2] --> B[CLIP cache]
+  B --> C[FlatIP / HNSW artifacts]
+  C --> D[FastAPI retrieval]
+  D --> E[Privacy-safe telemetry]
+  E --> F[Offline monitoring]
+```
+
+On the tracked Flickr8k official test split (1,000 images, 5,000 captions),
+`openai/clip-vit-base-patch32` achieved text-to-image R@1/R@5/R@10 of
+**0.5538/0.8160/0.8910** and image-to-text **0.7170/0.9170/0.9560**. FlatIP matched the
+reference top-1/5/10 results exactly. A bounded validation-only adapter experiment reduced mean
+bidirectional MRR by **0.011897**, so the release retains zero-shot CLIP. These are tracked local
+results, not newly recomputed release metrics.
+
+## 30-second quickstart
+
+The release smoke is fully synthetic: it downloads nothing, loads no neural model, and does not
+touch Flickr8k or real indexes.
+
+```bash
+python -m pip install -e ".[dev,faiss,serve]"
+multimodal-retrieval-ops --version
+multimodal-retrieval-ops project-info
+make portfolio-smoke
+make release-check
+```
+
+For real artifacts, ingest Flickr8k, create the CLIP embedding cache, build FlatIP and optionally
+HNSW indexes, then mount those persisted artifacts when serving. Those opt-in workflows require
+the documented extras and locally available data/model files; normal verification stays neural-
+and download-free. Cached-ID service examples:
+
+```bash
+make serve-retrieval-flat
+make serve-retrieval-hnsw
+# POST /retrieve/images with {"caption_id": "...", "top_k": 5}
+# POST /retrieve/captions with {"image_id": "...", "top_k": 5}
+```
+
+Documentation: [architecture](docs/architecture.md), [model card](docs/model_card.md),
+[evaluation methodology](docs/evaluation_methodology.md), [operations](docs/operations.md),
+[release checklist](docs/release_checklist.md), and [interview notes](docs/interview_notes.md).
+
+Limitations: neural inference is optional and artifact-bound; HNSW is not universally faster or
+more accurate than FlatIP; the service has not been production-deployed; Flickr8k is small and its
+tracked source license remains unresolved; monitoring smoke data is insufficient for a production
+health conclusion.
+
+## Milestone history
 
 ## Milestone 1: project foundation
 

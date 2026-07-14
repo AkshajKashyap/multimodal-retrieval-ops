@@ -1,9 +1,16 @@
 [project]
 name = "multimodal-retrieval-ops"
-version = "0.1.0"
-description = "Production-style image-text retrieval system with CLIP-style embeddings, contrastive fine-tuning, FAISS search, reranking, evaluation, FastAPI serving, and monitoring."
+version = "1.0.0"
+description = "Reproducible image-text retrieval evaluation, FAISS serving, and privacy-safe monitoring."
 requires-python = ">=3.11"
 dependencies = []
+readme = "README.md"
+license = {file = "LICENSE"}
+authors = [{name = "Akshaj Kashyap"}]
+
+[project.urls]
+Repository = "https://github.com/AkshajKashyap/multimodal-retrieval-ops"
+Documentation = "https://github.com/AkshajKashyap/multimodal-retrieval-ops/tree/main/docs"
 
 [project.scripts]
 multimodal-retrieval-ops = "multimodal_retrieval_ops.cli:main"

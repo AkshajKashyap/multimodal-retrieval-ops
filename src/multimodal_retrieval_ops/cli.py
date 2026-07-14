@@ -132,6 +132,12 @@ from .multimodal_reporting import write_multimodal_reports
 from .reporting import write_manifest_report
 from .evaluation import evaluate_index
 from .retrieval_reporting import write_retrieval_reports
+from .portfolio_release import (
+    run_portfolio_smoke,
+    verify_portfolio_output,
+    write_portfolio_outputs,
+)
+from .release_consistency import validate_release_consistency
 from .retrieval_monitoring import (
     HealthThresholds,
     RetrievalMonitoringError,
@@ -149,6 +155,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("project-info", help="show project information")
+    portfolio = subparsers.add_parser(
+        "run-portfolio-smoke", help="run the synthetic release integration smoke"
+    )
+    portfolio.add_argument("--report-output", type=Path)
+    portfolio.add_argument("--metrics-output", type=Path)
+    portfolio.add_argument("--test-count", type=int)
+    portfolio.add_argument("--verify-existing", action="store_true")
+    subparsers.add_parser(
+        "validate-release-consistency", help="verify all release version surfaces"
+    )
     generate = subparsers.add_parser("generate-demo-manifest", help="write deterministic demo CSV")
     generate.add_argument("--output", type=Path)
     validate = subparsers.add_parser("validate-manifest", help="validate a manifest CSV")
@@ -570,9 +586,50 @@ def main(
     config = load_config()
     try:
         if args.command == "project-info":
-            print(f"multimodal-retrieval-ops {__version__}")
-            print("Milestone: 11A (privacy-safe retrieval telemetry and offline monitoring)")
-            print("Runtime: lightweight base install; optional CPU/GPU CLIP extra")
+            print(
+                json.dumps(
+                    {
+                        "name": "multimodal-retrieval-ops",
+                        "version": __version__,
+                        "python_requirement": ">=3.11",
+                        "retrieval_directions": ["text_to_image", "image_to_text"],
+                        "serving_backends": ["FlatIP", "HNSW"],
+                        "optional_neural_inference": ["text", "image"],
+                        "telemetry_schema_version": 1,
+                        "primary_evaluation_dataset": "Flickr8k official test split",
+                        "release_limitations": [
+                            "local artifact-backed service; not production deployed",
+                            "neural dependencies and model weights are optional",
+                            "HNSW is optional; FlatIP remains the correctness reference",
+                        ],
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+        elif args.command == "run-portfolio-smoke":
+            report_output = args.report_output or config.portfolio_release_report_path
+            metrics_output = args.metrics_output or config.portfolio_release_metrics_path
+            if args.verify_existing:
+                result = verify_portfolio_output(metrics_output)
+                print(
+                    "Verified portfolio smoke: "
+                    f"state={result['smoke_state']}, "
+                    f"health={result['monitoring_health_decision']}"
+                )
+            else:
+                result = run_portfolio_smoke(supplied_test_count=args.test_count)
+                write_portfolio_outputs(result, report_output, metrics_output)
+                print(
+                    "Portfolio smoke complete: "
+                    f"state={result.smoke_state}, synthetic=true, "
+                    f"health={result.monitoring_health_decision}"
+                )
+        elif args.command == "validate-release-consistency":
+            result = validate_release_consistency()
+            if not result.consistent:
+                raise ValueError("release version surfaces are inconsistent")
+            print(f"Release consistency: passed ({result.expected_version})")
         elif args.command == "generate-demo-manifest":
             output = args.output or config.manifest_path
             items = generate_demo_manifest(output)

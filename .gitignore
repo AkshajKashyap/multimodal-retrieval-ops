@@ -12,3 +12,9 @@ telemetry/
 *.pyc
 *.egg-info/
 .DS_Store
+.env
+.env.*
+*.faiss
+*.pt
+*.pth
+*.ckpt

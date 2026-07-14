@@ -1,0 +1,9 @@
+cff-version: 1.2.0
+message: "If you use this image-text retrieval reference system, please cite this repository."
+title: "multimodal-retrieval-ops"
+version: "1.0.0"
+authors:
+  - family-names: "Kashyap"
+    given-names: "Akshaj"
+repository-code: "https://github.com/AkshajKashyap/multimodal-retrieval-ops"
+license: MIT

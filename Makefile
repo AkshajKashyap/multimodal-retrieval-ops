@@ -1,6 +1,26 @@
 install:
 	python -m pip install -e ".[dev]"
 
+portfolio-smoke:
+	multimodal-retrieval-ops run-portfolio-smoke
+
+release-info:
+	multimodal-retrieval-ops --version
+	multimodal-retrieval-ops project-info
+	multimodal-retrieval-ops validate-release-consistency
+
+release-check:
+	multimodal-retrieval-ops --version
+	multimodal-retrieval-ops project-info
+	multimodal-retrieval-ops run-portfolio-smoke --verify-existing
+	multimodal-retrieval-ops validate-release-consistency
+	pytest -q
+	ruff check .
+	git diff --check
+
+docker-smoke:
+	bash scripts/docker_smoke_test.sh
+
 check:
 	pytest -q
 	ruff check .

@@ -1,0 +1,34 @@
+{
+  "known_limitations": [
+    "synthetic smoke validates integration, not model quality",
+    "neural inference and real datasets are intentionally excluded",
+    "monitoring smoke is insufficient for production-health conclusions",
+    "the release is not evidence of internet-scale or deployed production operation"
+  ],
+  "major_capabilities": [
+    "schema-v2 multi-caption relationships",
+    "normalized bidirectional FlatIP retrieval",
+    "in-process FastAPI cached-ID serving",
+    "privacy-safe JSONL telemetry",
+    "offline monitoring with minimum-sample safeguards"
+  ],
+  "monitoring_health_decision": "insufficient_data",
+  "neural_inference_used": false,
+  "release_version": "1.0.0",
+  "retrieval_directions_exercised": [
+    "text_to_image",
+    "image_to_text"
+  ],
+  "service_endpoints_exercised": [
+    "/health",
+    "/ready",
+    "/retrieve/images",
+    "/retrieve/captions"
+  ],
+  "smoke_state": "success",
+  "supplied_test_count": null,
+  "synthetic_artifacts": true,
+  "telemetry_event_count": 4,
+  "telemetry_exercised": true,
+  "telemetry_schema_version": 1
+}

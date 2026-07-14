@@ -67,6 +67,8 @@ class ProjectConfig:
     retrieval_monitoring_report_path: Path = Path("reports/retrieval_monitoring_report.md")
     retrieval_monitoring_metrics_path: Path = Path("reports/retrieval_monitoring_metrics.json")
     retrieval_monitoring_decision_path: Path = Path("reports/retrieval_monitoring_decision.md")
+    portfolio_release_report_path: Path = Path("reports/portfolio/release_1.0.0.md")
+    portfolio_release_metrics_path: Path = Path("reports/portfolio/release_1.0.0.json")
     adapter_artifacts_path: Path = Path("artifacts/contrastive_adapters")
     adapter_train_cache_path: Path = Path(
         "artifacts/contrastive_adapters/train_embeddings.json"
@@ -289,6 +291,16 @@ def load_config(path: Path | None = None) -> ProjectConfig:
             project.get(
                 "retrieval_monitoring_decision_path",
                 ProjectConfig.retrieval_monitoring_decision_path,
+            )
+        ),
+        portfolio_release_report_path=Path(
+            project.get(
+                "portfolio_release_report_path", ProjectConfig.portfolio_release_report_path
+            )
+        ),
+        portfolio_release_metrics_path=Path(
+            project.get(
+                "portfolio_release_metrics_path", ProjectConfig.portfolio_release_metrics_path
             )
         ),
         adapter_artifacts_path=Path(
