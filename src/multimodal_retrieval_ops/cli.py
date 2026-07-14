@@ -87,6 +87,18 @@ from .faiss_hnsw import (
     write_hnsw_failure,
     write_hnsw_outputs,
 )
+from .faiss_reranking import (
+    CANDIDATE_K,
+    EF_SEARCH,
+    RerankingArtifactIncompatibleError,
+    RerankingArtifactUnavailableError,
+    evaluate_hnsw_reranking,
+    load_persisted_reranking_info,
+    load_reranking_artifacts,
+    search_reranked_embedding,
+    write_reranking_failure,
+    write_reranking_outputs,
+)
 from .hf_clip_benchmark import run_hf_clip_benchmark, write_hf_clip_failure
 from .hf_flickr8k import (
     DEFAULT_HF_FLICKR8K_DATASET,
@@ -333,6 +345,34 @@ def build_parser() -> argparse.ArgumentParser:
     hnsw_image.add_argument("--k", type=int, default=10)
     hnsw_image.add_argument("--cache", type=Path)
     hnsw_image.add_argument("--artifacts-dir", type=Path)
+    rerank_evaluate = subparsers.add_parser(
+        "evaluate-hnsw-reranking", help="evaluate fixed exact reranking of HNSW top-50"
+    )
+    rerank_evaluate.add_argument("--candidate-k", type=int, default=CANDIDATE_K)
+    rerank_evaluate.add_argument("--ef-search", type=int, default=EF_SEARCH)
+    rerank_evaluate.add_argument("--cache", type=Path)
+    rerank_evaluate.add_argument("--manifest", type=Path)
+    rerank_evaluate.add_argument("--flat-artifacts-dir", type=Path)
+    rerank_evaluate.add_argument("--hnsw-artifacts-dir", type=Path)
+    subparsers.add_parser(
+        "hnsw-reranking-info", help="load and summarize the persisted reranking result"
+    )
+    rerank_text = subparsers.add_parser(
+        "search-reranked-text", help="rerank HNSW images for a cached caption ID"
+    )
+    rerank_text.add_argument("--query-caption-id", required=True)
+    rerank_text.add_argument("--k", type=int, default=10)
+    rerank_text.add_argument("--cache", type=Path)
+    rerank_text.add_argument("--flat-artifacts-dir", type=Path)
+    rerank_text.add_argument("--hnsw-artifacts-dir", type=Path)
+    rerank_image = subparsers.add_parser(
+        "search-reranked-image", help="rerank HNSW captions for a cached image ID"
+    )
+    rerank_image.add_argument("--query-image-id", required=True)
+    rerank_image.add_argument("--k", type=int, default=10)
+    rerank_image.add_argument("--cache", type=Path)
+    rerank_image.add_argument("--flat-artifacts-dir", type=Path)
+    rerank_image.add_argument("--hnsw-artifacts-dir", type=Path)
     for command, help_text in (
         ("serve-retrieval", "serve persisted retrieval artifacts over HTTP"),
         ("retrieval-service-info", "inspect retrieval-service artifact readiness"),
@@ -1143,6 +1183,72 @@ def main(
                     sort_keys=True,
                 )
             )
+        elif args.command == "evaluate-hnsw-reranking":
+            result, metadata = evaluate_hnsw_reranking(
+                args.cache or config.hf_test_cache_path,
+                args.manifest or config.hf_flickr8k_manifest_path,
+                args.flat_artifacts_dir or config.faiss_artifacts_path,
+                args.hnsw_artifacts_dir or config.faiss_hnsw_artifacts_path,
+                candidate_k=args.candidate_k,
+                ef_search=args.ef_search,
+            )
+            write_reranking_outputs(
+                result,
+                metadata,
+                config.hnsw_reranking_report_path,
+                config.hnsw_reranking_metrics_path,
+                config.hnsw_reranking_decision_path,
+            )
+            decision = "pass" if result.promotion_gate.approved else "fail"
+            print(
+                "HNSW exact reranking evaluation complete; "
+                f"candidate_k={metadata.candidate_k}, efSearch={metadata.ef_search}, "
+                f"promotion_gate={decision}"
+            )
+        elif args.command == "hnsw-reranking-info":
+            payload = load_persisted_reranking_info(config.hnsw_reranking_metrics_path)
+            metadata = payload["metadata"]
+            gate = payload["promotion_gate"]
+            print(
+                json.dumps(
+                    {
+                        "artifact_compatibility": metadata["artifact_compatibility"],
+                        "candidate_k": metadata["candidate_k"],
+                        "ef_search": metadata["ef_search"],
+                        "promotion_approved": gate["approved"],
+                        "recommendation": gate["recommendation"],
+                        "rejected_adapter_embeddings_used": metadata[
+                            "rejected_adapter_embeddings_used"
+                        ],
+                        "run_state": payload["run_state"],
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+        elif args.command in {"search-reranked-text", "search-reranked-image"}:
+            artifacts = load_reranking_artifacts(
+                args.cache or config.hf_test_cache_path,
+                args.flat_artifacts_dir or config.faiss_artifacts_path,
+                args.hnsw_artifacts_dir or config.faiss_hnsw_artifacts_path,
+            )
+            if args.command == "search-reranked-text":
+                results = search_reranked_embedding(
+                    args.query_caption_id,
+                    artifacts.cache.caption_embeddings,
+                    artifacts.cache.image_embeddings,
+                    artifacts.hnsw_text_to_image,
+                    k=args.k,
+                )
+            else:
+                results = search_reranked_embedding(
+                    args.query_image_id,
+                    artifacts.cache.image_embeddings,
+                    artifacts.cache.caption_embeddings,
+                    artifacts.hnsw_image_to_text,
+                    k=args.k,
+                )
+            print(json.dumps(results, indent=2, sort_keys=True))
         elif args.command in {
             "serve-retrieval",
             "retrieval-service-info",
@@ -1410,7 +1516,19 @@ def main(
             state = "cache_unavailable" if "missing" in str(error) else "cache_incompatible"
         else:
             state = "execution_failed"
-        if args.command.startswith(("build-faiss-hnsw", "evaluate-faiss-hnsw", "search-hnsw")):
+        if args.command == "evaluate-hnsw-reranking":
+            if isinstance(error, RerankingArtifactUnavailableError):
+                state = "artifact_unavailable"
+            elif isinstance(error, RerankingArtifactIncompatibleError):
+                state = "artifact_incompatible"
+            write_reranking_failure(
+                config.hnsw_reranking_report_path,
+                config.hnsw_reranking_metrics_path,
+                config.hnsw_reranking_decision_path,
+                state,
+                str(error),
+            )
+        elif args.command.startswith(("build-faiss-hnsw", "evaluate-faiss-hnsw", "search-hnsw")):
             write_hnsw_failure(
                 config.faiss_hnsw_report_path,
                 config.faiss_hnsw_metrics_path,

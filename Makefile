@@ -46,6 +46,12 @@ faiss-hnsw-check:
 faiss-hnsw-eval:
 	multimodal-retrieval-ops evaluate-faiss-hnsw
 
+hnsw-reranking-check:
+	pytest -q tests/test_milestone_ten_a.py
+
+hnsw-reranking-eval:
+	multimodal-retrieval-ops evaluate-hnsw-reranking --candidate-k 50 --ef-search 64
+
 retrieval-service-check:
 	pytest -q tests/test_milestone_seven_c.py
 

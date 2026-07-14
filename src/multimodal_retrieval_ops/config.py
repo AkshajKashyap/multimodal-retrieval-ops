@@ -54,6 +54,9 @@ class ProjectConfig:
     faiss_hnsw_artifacts_path: Path = Path("artifacts/faiss_hnsw")
     faiss_hnsw_report_path: Path = Path("reports/faiss_hnsw_comparison_report.md")
     faiss_hnsw_metrics_path: Path = Path("reports/faiss_hnsw_comparison_metrics.json")
+    hnsw_reranking_report_path: Path = Path("reports/hnsw_reranking_report.md")
+    hnsw_reranking_metrics_path: Path = Path("reports/hnsw_reranking_metrics.json")
+    hnsw_reranking_decision_path: Path = Path("reports/hnsw_reranking_decision.md")
     retrieval_service_report_path: Path = Path("reports/retrieval_service_report.md")
     retrieval_service_metrics_path: Path = Path("reports/retrieval_service_metrics.json")
     text_inference_service_report_path: Path = Path("reports/text_inference_service_report.md")
@@ -213,6 +216,21 @@ def load_config(path: Path | None = None) -> ProjectConfig:
         ),
         faiss_hnsw_metrics_path=Path(
             project.get("faiss_hnsw_metrics_path", ProjectConfig.faiss_hnsw_metrics_path)
+        ),
+        hnsw_reranking_report_path=Path(
+            project.get(
+                "hnsw_reranking_report_path", ProjectConfig.hnsw_reranking_report_path
+            )
+        ),
+        hnsw_reranking_metrics_path=Path(
+            project.get(
+                "hnsw_reranking_metrics_path", ProjectConfig.hnsw_reranking_metrics_path
+            )
+        ),
+        hnsw_reranking_decision_path=Path(
+            project.get(
+                "hnsw_reranking_decision_path", ProjectConfig.hnsw_reranking_decision_path
+            )
         ),
         retrieval_service_report_path=Path(
             project.get(

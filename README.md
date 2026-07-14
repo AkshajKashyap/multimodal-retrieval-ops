@@ -536,3 +536,35 @@ proof of causality.
 
 The decision remains **retain zero-shot CLIP**. No second configuration was trained, no serving
 index was changed, and the official test split remains untouched.
+
+## Milestone 10A: bounded exact reranking
+
+Milestone 10A adds an offline two-stage retrieval comparison over the persisted official-test
+Flickr8k artifacts. HNSW generates exactly 50 candidates with the existing `M=32`,
+`efConstruction=100`, and `efSearch=64` configuration. The candidates are then reranked by exact
+inner product against their original cached, finite, L2-normalized CLIP vectors. Original HNSW
+shortlist order breaks exact-score ties deterministically.
+
+Install the optional CPU FAISS dependency, run focused checks, and execute the one fixed protocol:
+
+```bash
+python -m pip install -e ".[dev,faiss]"
+make hnsw-reranking-check
+multimodal-retrieval-ops evaluate-hnsw-reranking --candidate-k 50 --ef-search 64
+multimodal-retrieval-ops hnsw-reranking-info
+```
+
+Cached-ID searches exercise the same persisted two-stage path without loading CLIP:
+
+```bash
+multimodal-retrieval-ops search-reranked-text --query-caption-id <CAPTION_ID>
+multimodal-retrieval-ops search-reranked-image --query-image-id <IMAGE_ID>
+```
+
+The evaluation compares FlatIP, raw HNSW, and exactly reranked HNSW in both directions, including
+shortlist coverage, end-task metrics, agreement, rank changes, exact-score verification, and a
+conservative promotion gate. It measures retrieval-backend fidelity over an established artifact;
+it is not a new model-quality estimate. The rejected contrastive adapters are never loaded or used,
+and no CLIP inference, embedding generation, training, index rebuilding, API, or serving changes are
+part of this milestone. Timing is machine-specific, and reranking may not improve latency at
+Flickr8k scale.
