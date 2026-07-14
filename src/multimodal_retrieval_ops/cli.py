@@ -457,6 +457,11 @@ def build_parser() -> argparse.ArgumentParser:
     telemetry_analyze.add_argument("--maximum-p95-latency-ms", type=float)
     telemetry_analyze.add_argument("--minimum-labeled-recall-at-10", type=float, default=0.80)
     telemetry_analyze.add_argument("--minimum-labeled-mrr", type=float, default=0.50)
+    telemetry_analyze.add_argument("--min-error-rate-observations", type=int, default=20)
+    telemetry_analyze.add_argument("--min-latency-observations", type=int, default=20)
+    telemetry_analyze.add_argument("--min-labeled-recall-observations", type=int, default=50)
+    telemetry_analyze.add_argument("--min-labeled-mrr-observations", type=int, default=50)
+    telemetry_analyze.add_argument("--min-readiness-observations", type=int, default=1)
     telemetry_analyze.add_argument("--report-output", type=Path)
     telemetry_analyze.add_argument("--metrics-output", type=Path)
     telemetry_analyze.add_argument("--decision-output", type=Path)
@@ -1355,6 +1360,13 @@ def main(
                 maximum_p95_latency_ms=args.maximum_p95_latency_ms,
                 minimum_labeled_recall_at_10=args.minimum_labeled_recall_at_10,
                 minimum_labeled_mrr=args.minimum_labeled_mrr,
+                min_error_rate_observations=args.min_error_rate_observations,
+                min_latency_observations=args.min_latency_observations,
+                min_labeled_recall_observations=(
+                    args.min_labeled_recall_observations
+                ),
+                min_labeled_mrr_observations=args.min_labeled_mrr_observations,
+                min_readiness_observations=args.min_readiness_observations,
             )
             read_result = read_telemetry(
                 args.telemetry_path or config.retrieval_telemetry_path,

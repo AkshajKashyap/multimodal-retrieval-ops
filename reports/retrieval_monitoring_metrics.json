@@ -6,48 +6,68 @@
     "observation_count": 0
   },
   "health": {
-    "decision": "warning",
+    "decision": "insufficient_data",
     "threshold_results": {
       "maximum_error_rate": {
         "comparison": "maximum",
-        "observed": 0.2,
-        "passed": true,
-        "required": true,
-        "threshold": 0.25
+        "configured_threshold": 0.25,
+        "metric_name": "overall_error_rate",
+        "minimum_required_observations": 20,
+        "observation_count": 5,
+        "observed_value": 0.2,
+        "result": "insufficient_data",
+        "sufficient_data": false
       },
       "maximum_p95_latency_ms": {
         "comparison": "maximum",
-        "observed": 3.151848000015889,
-        "passed": null,
-        "required": false,
-        "threshold": null
+        "configured_threshold": null,
+        "metric_name": "p95_latency_ms",
+        "minimum_required_observations": 20,
+        "observation_count": 5,
+        "observed_value": 3.151848000015889,
+        "result": "disabled",
+        "sufficient_data": false
       },
       "maximum_readiness_failures": {
         "comparison": "maximum",
-        "observed": 0,
-        "passed": true,
-        "required": true,
-        "threshold": 0
+        "configured_threshold": 0,
+        "metric_name": "readiness_failure_count",
+        "minimum_required_observations": 1,
+        "observation_count": 1,
+        "observed_value": 0,
+        "result": "pass",
+        "sufficient_data": true
       },
       "minimum_labeled_mrr": {
         "comparison": "minimum",
-        "observed": 0.5,
-        "passed": true,
-        "required": true,
-        "threshold": 0.5
+        "configured_threshold": 0.5,
+        "metric_name": "mean_labeled_reciprocal_rank",
+        "minimum_required_observations": 50,
+        "observation_count": 2,
+        "observed_value": 0.5,
+        "result": "insufficient_data",
+        "sufficient_data": false
       },
       "minimum_labeled_recall_at_10": {
         "comparison": "minimum",
-        "observed": 0.5,
-        "passed": false,
-        "required": true,
-        "threshold": 0.8
+        "configured_threshold": 0.8,
+        "metric_name": "mean_labeled_recall_at_10",
+        "minimum_required_observations": 50,
+        "observation_count": 2,
+        "observed_value": 0.5,
+        "result": "insufficient_data",
+        "sufficient_data": false
       }
     },
     "thresholds": {
       "maximum_error_rate": 0.25,
       "maximum_p95_latency_ms": null,
       "maximum_readiness_failures": 0,
+      "min_error_rate_observations": 20,
+      "min_labeled_mrr_observations": 50,
+      "min_labeled_recall_observations": 50,
+      "min_latency_observations": 20,
+      "min_readiness_observations": 1,
       "minimum_labeled_mrr": 0.5,
       "minimum_labeled_recall_at_10": 0.8
     }

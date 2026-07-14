@@ -42,12 +42,18 @@ image queries are explicitly unlabeled; no relevance judgments are invented.
 
 ## Health decision
 
-Decision: **warning**
+Decision: **insufficient_data**
 
-- maximum_error_rate: observed=0.2000, threshold=0.2500, passed=True
-- maximum_readiness_failures: observed=0, threshold=0, passed=True
-- minimum_labeled_recall_at_10: observed=0.5000, threshold=0.8000, passed=False
-- minimum_labeled_mrr: observed=0.5000, threshold=0.5000, passed=True
+| Check | Observations | Minimum required | Observed value | Threshold | Sufficiency | Result |
+| --- | ---: | ---: | ---: | ---: | --- | --- |
+| maximum_error_rate | 5 | 20 | 0.2000 | 0.2500 | insufficient | insufficient_data |
+| maximum_readiness_failures | 1 | 1 | 0 | 0 | sufficient | pass |
+| maximum_p95_latency_ms | 5 | 20 | 3.1518 | unavailable | insufficient | disabled |
+| minimum_labeled_recall_at_10 | 2 | 50 | 0.5000 | 0.8000 | insufficient | insufficient_data |
+| minimum_labeled_mrr | 2 | 50 | 0.5000 | 0.5000 | insufficient | insufficient_data |
+
+No production-health conclusion can be drawn from this undersized window.
+The smoke window successfully validates telemetry collection and analysis only.
 
 ## Privacy and operational limitations
 

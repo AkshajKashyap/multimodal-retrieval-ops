@@ -1,11 +1,12 @@
 # Retrieval Monitoring Decision
 
-Decision: **warning**
+Decision: **insufficient_data**
 
-- maximum_error_rate: passed=True
-- maximum_readiness_failures: passed=True
-- minimum_labeled_recall_at_10: passed=False
-- minimum_labeled_mrr: passed=True
+- maximum_error_rate: insufficient_data (5/20 observations)
+- maximum_readiness_failures: pass (1/1 observations)
+- maximum_p95_latency_ms: disabled (5/20 observations)
+- minimum_labeled_recall_at_10: insufficient_data (2/50 observations)
+- minimum_labeled_mrr: insufficient_data (2/50 observations)
 
-This is a bounded single-window service-health decision. Known-label thresholds use
-cached-ID queries only; arbitrary queries have no inferred relevance labels.
+No production-health conclusion can be drawn. The window validates the
+telemetry pipeline, but it does not meet all enabled minimum sample sizes.

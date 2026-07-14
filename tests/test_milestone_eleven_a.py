@@ -298,6 +298,14 @@ def test_offline_aggregation_latency_cache_scores_and_quality() -> None:
 
 
 def test_health_decisions_cover_healthy_warning_and_insufficient_data() -> None:
+    controlled = HealthThresholds(
+        min_error_rate_observations=1,
+        min_latency_observations=1,
+        min_labeled_recall_observations=1,
+        min_labeled_mrr_observations=1,
+        min_readiness_observations=1,
+    )
+    readiness = event(endpoint="readiness", retrieval_direction="operational")
     labeled = event(
         ground_truth_relevance_available=True,
         recall_at_1=1.0,
@@ -305,21 +313,34 @@ def test_health_decisions_cover_healthy_warning_and_insufficient_data() -> None:
         recall_at_10=1.0,
         reciprocal_rank=1.0,
     )
-    healthy = analyze_events(TelemetryReadResult([labeled], 0, 0, 0, 1))
+    healthy = analyze_events(
+        TelemetryReadResult([readiness, labeled], 0, 0, 0, 1), controlled
+    )
     assert healthy["health"]["decision"] == "healthy"
     failed = event(
         request_status="failed",
         http_status_code=500,
         error_category="internal_retrieval_failure",
     )
-    warning = analyze_events(TelemetryReadResult([labeled, failed], 0, 0, 0, 1))
+    warning = analyze_events(
+        TelemetryReadResult([readiness, labeled, failed], 0, 0, 0, 1), controlled
+    )
     assert warning["health"]["decision"] == "warning"
     unlabeled = event()
-    insufficient = analyze_events(TelemetryReadResult([unlabeled], 0, 0, 0, 1))
+    insufficient = analyze_events(
+        TelemetryReadResult([readiness, unlabeled], 0, 0, 0, 1), controlled
+    )
     assert insufficient["health"]["decision"] == "insufficient_data"
     latency_warning = analyze_events(
-        TelemetryReadResult([labeled], 0, 0, 0, 1),
-        HealthThresholds(maximum_p95_latency_ms=1.0),
+        TelemetryReadResult([readiness, labeled], 0, 0, 0, 1),
+        HealthThresholds(
+            maximum_p95_latency_ms=1.0,
+            min_error_rate_observations=1,
+            min_latency_observations=1,
+            min_labeled_recall_observations=1,
+            min_labeled_mrr_observations=1,
+            min_readiness_observations=1,
+        ),
     )
     assert latency_warning["health"]["decision"] == "warning"
 

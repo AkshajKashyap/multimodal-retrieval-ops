@@ -40,6 +40,11 @@ class HealthThresholds:
     maximum_p95_latency_ms: float | None = None
     minimum_labeled_recall_at_10: float | None = 0.80
     minimum_labeled_mrr: float | None = 0.50
+    min_error_rate_observations: int = 20
+    min_latency_observations: int = 20
+    min_labeled_recall_observations: int = 50
+    min_labeled_mrr_observations: int = 50
+    min_readiness_observations: int = 1
 
     def validate(self) -> None:
         probabilities = (
@@ -53,6 +58,15 @@ class HealthThresholds:
             raise RetrievalMonitoringError("maximum readiness failures must be non-negative")
         if self.maximum_p95_latency_ms is not None and self.maximum_p95_latency_ms <= 0:
             raise RetrievalMonitoringError("maximum p95 latency must be positive")
+        minimums = (
+            self.min_error_rate_observations,
+            self.min_latency_observations,
+            self.min_labeled_recall_observations,
+            self.min_labeled_mrr_observations,
+            self.min_readiness_observations,
+        )
+        if any(value <= 0 for value in minimums):
+            raise RetrievalMonitoringError("minimum observation counts must be positive")
 
 
 @dataclass(frozen=True)
@@ -138,25 +152,49 @@ def _median(values: list[float]) -> float | None:
 
 
 def _threshold_result(
-    *, observed: float | int | None, threshold: float | int | None, comparison: str
+    *,
+    metric_name: str,
+    observed: float | int | None,
+    threshold: float | int | None,
+    comparison: str,
+    observation_count: int,
+    minimum_observations: int,
 ) -> dict[str, Any]:
     if threshold is None:
         return {
             "comparison": comparison,
-            "observed": observed,
-            "passed": None,
-            "required": False,
-            "threshold": None,
+            "configured_threshold": None,
+            "metric_name": metric_name,
+            "minimum_required_observations": minimum_observations,
+            "observation_count": observation_count,
+            "observed_value": observed,
+            "result": "disabled",
+            "sufficient_data": False,
+        }
+    sufficient = observation_count >= minimum_observations and observed is not None
+    if not sufficient:
+        return {
+            "comparison": comparison,
+            "configured_threshold": threshold,
+            "metric_name": metric_name,
+            "minimum_required_observations": minimum_observations,
+            "observation_count": observation_count,
+            "observed_value": observed,
+            "result": "insufficient_data",
+            "sufficient_data": False,
         }
     passed = None if observed is None else (
         observed <= threshold if comparison == "maximum" else observed >= threshold
     )
     return {
         "comparison": comparison,
-        "observed": observed,
-        "passed": passed,
-        "required": True,
-        "threshold": threshold,
+        "configured_threshold": threshold,
+        "metric_name": metric_name,
+        "minimum_required_observations": minimum_observations,
+        "observation_count": observation_count,
+        "observed_value": observed,
+        "result": "pass" if passed else "fail",
+        "sufficient_data": True,
     }
 
 
@@ -184,6 +222,7 @@ def analyze_events(
         event.reciprocal_rank for event in labeled if event.reciprocal_rank is not None
     ]
     readiness_failures = sum(event.error_category == "readiness_failure" for event in events)
+    readiness_observations = sum(event.endpoint == "readiness" for event in events)
     error_rate = len(failures) / len(events) if events else None
     latency = {
         "observation_count": len(latencies),
@@ -206,38 +245,53 @@ def analyze_events(
     }
     checks = {
         "maximum_error_rate": _threshold_result(
+            metric_name="overall_error_rate",
             observed=error_rate,
             threshold=thresholds.maximum_error_rate,
             comparison="maximum",
+            observation_count=len(events),
+            minimum_observations=thresholds.min_error_rate_observations,
         ),
         "maximum_readiness_failures": _threshold_result(
+            metric_name="readiness_failure_count",
             observed=readiness_failures,
             threshold=thresholds.maximum_readiness_failures,
             comparison="maximum",
+            observation_count=readiness_observations,
+            minimum_observations=thresholds.min_readiness_observations,
         ),
         "maximum_p95_latency_ms": _threshold_result(
+            metric_name="p95_latency_ms",
             observed=latency["p95_ms"],
             threshold=thresholds.maximum_p95_latency_ms,
             comparison="maximum",
+            observation_count=len(latencies),
+            minimum_observations=thresholds.min_latency_observations,
         ),
         "minimum_labeled_recall_at_10": _threshold_result(
+            metric_name="mean_labeled_recall_at_10",
             observed=quality["mean_recall_at_10"],
             threshold=thresholds.minimum_labeled_recall_at_10,
             comparison="minimum",
+            observation_count=len(labeled),
+            minimum_observations=thresholds.min_labeled_recall_observations,
         ),
         "minimum_labeled_mrr": _threshold_result(
+            metric_name="mean_labeled_reciprocal_rank",
             observed=quality["mean_reciprocal_rank"],
             threshold=thresholds.minimum_labeled_mrr,
             comparison="minimum",
+            observation_count=len(labeled),
+            minimum_observations=thresholds.min_labeled_mrr_observations,
         ),
     }
-    required_checks = [value for value in checks.values() if value["required"]]
-    if not events or not latencies or any(value["passed"] is None for value in required_checks):
-        health = "insufficient_data"
-    elif all(value["passed"] for value in required_checks):
+    enabled_checks = [value for value in checks.values() if value["result"] != "disabled"]
+    if any(value["result"] == "fail" for value in enabled_checks):
+        health = "warning"
+    elif enabled_checks and all(value["result"] == "pass" for value in enabled_checks):
         health = "healthy"
     else:
-        health = "warning"
+        health = "insufficient_data"
     return {
         "schema_version": TELEMETRY_SCHEMA_VERSION,
         "source_file_count": read_result.file_count,
@@ -359,13 +413,27 @@ def render_monitoring_report(summary: dict[str, Any]) -> str:
             "",
             f"Decision: **{health['decision']}**",
             "",
+            "| Check | Observations | Minimum required | Observed value | Threshold | Sufficiency | Result |",
+            "| --- | ---: | ---: | ---: | ---: | --- | --- |",
             *(
-                f"- {name}: observed={_display(value['observed'])}, "
-                f"threshold={_display(value['threshold'])}, passed={value['passed']}"
+                f"| {name} | {value['observation_count']} | "
+                f"{value['minimum_required_observations']} | "
+                f"{_display(value['observed_value'])} | "
+                f"{_display(value['configured_threshold'])} | "
+                f"{'sufficient' if value['sufficient_data'] else 'insufficient'} | "
+                f"{value['result']} |"
                 for name, value in health["threshold_results"].items()
-                if value["required"]
             ),
             "",
+            *(
+                [
+                    "No production-health conclusion can be drawn from this undersized window.",
+                    "The smoke window successfully validates telemetry collection and analysis only.",
+                    "",
+                ]
+                if health["decision"] == "insufficient_data"
+                else []
+            ),
             "## Privacy and operational limitations",
             "",
             "Telemetry excludes raw text, caption text, image bytes, uploaded filenames, absolute",
@@ -389,13 +457,23 @@ def render_monitoring_decision(summary: dict[str, Any]) -> str:
             f"Decision: **{health['decision']}**",
             "",
             *(
-                f"- {name}: passed={value['passed']}"
+                f"- {name}: {value['result']} "
+                f"({value['observation_count']}/{value['minimum_required_observations']} observations)"
                 for name, value in health["threshold_results"].items()
-                if value["required"]
             ),
             "",
-            "This is a bounded single-window service-health decision. Known-label thresholds use",
-            "cached-ID queries only; arbitrary queries have no inferred relevance labels.",
+            *(
+                [
+                    "No production-health conclusion can be drawn. The window validates the",
+                    "telemetry pipeline, but it does not meet all enabled minimum sample sizes.",
+                ]
+                if health["decision"] == "insufficient_data"
+                else [
+                    "This is a bounded single-window service-health decision. Known-label",
+                    "thresholds use cached-ID queries only; arbitrary queries have no inferred",
+                    "relevance labels.",
+                ]
+            ),
             "",
         ]
     )

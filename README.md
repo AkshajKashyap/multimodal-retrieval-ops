@@ -604,9 +604,30 @@ multimodal-retrieval-ops analyze-retrieval-telemetry
 
 Default health thresholds allow at most a `0.25` error rate and zero readiness failures, require
 labeled Recall@10 of at least `0.80` and labeled MRR of at least `0.50`, and leave p95 latency
-unbounded unless configured. A window is `insufficient_data` when a required observation is absent.
-Known-label quality is computed only for cached-ID queries with existing manifest relevance;
-arbitrary text and uploaded-image queries remain explicitly unlabeled.
+unbounded unless configured. Minimum sample safeguards require 20 request observations for error
+rate, 20 latency observations when a p95 limit is enabled, 50 labeled cached-ID queries for each
+Recall@10 and MRR check, and one readiness observation. These conservative minimums prevent a tiny
+smoke window from being misrepresented as production-health evidence.
+
+Each enabled check independently reports `pass`, `fail`, or `insufficient_data`; an unset optional
+threshold reports `disabled`. The overall decision is `warning` when any sufficiently sampled check
+fails, `healthy` only when every enabled check has enough data and passes, and `insufficient_data`
+when nothing sufficiently sampled fails but at least one enabled check lacks evidence. Known-label
+quality uses only cached-ID queries with existing manifest relevance; arbitrary text and uploaded-
+image queries remain explicitly unlabeled.
+
+The five-event smoke is therefore expected to return `insufficient_data`: it validates telemetry
+collection, privacy, serialization, and offline analysis, but cannot support a production-health
+conclusion. Controlled synthetic tests can lower minimums explicitly without changing defaults:
+
+```bash
+multimodal-retrieval-ops analyze-retrieval-telemetry \
+  --min-error-rate-observations 5 \
+  --min-latency-observations 5 \
+  --min-labeled-recall-observations 2 \
+  --min-labeled-mrr-observations 2 \
+  --min-readiness-observations 1
+```
 
 Monitoring is process-local, single-instance, and single-window. Local rotation is not durable
 multi-instance observability, and score margins are operational signals rather than calibrated model
